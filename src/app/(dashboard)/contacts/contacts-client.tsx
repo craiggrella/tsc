@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
-import { Plus, Search, Contact } from "lucide-react";
+import { useState, useMemo, useCallback, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Plus, Search, Contact, ChevronLeft, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -15,6 +16,7 @@ import {
   Select,
   Textarea,
 } from "@/components/shared/detail-panel";
+import { formatPhone } from "@/lib/utils";
 import type { PersonType, ExecLevel } from "@/types/database";
 
 interface CompanyData {
@@ -53,6 +55,11 @@ interface ContactRow {
 interface ContactsClientProps {
   initialContacts: ContactRow[];
   companies: CompanyData[];
+  totalCount: number;
+  currentPage: number;
+  pageSize: number;
+  initialSearch: string;
+  initialTypeFilter: string;
 }
 
 const PERSON_TYPES: { value: PersonType; label: string }[] = [
@@ -104,17 +111,24 @@ const emptyForm = {
 export function ContactsClient({
   initialContacts,
   companies,
+  totalCount,
+  currentPage,
+  pageSize,
+  initialSearch,
+  initialTypeFilter,
 }: ContactsClientProps) {
   const supabase = createClient();
+  const router = useRouter();
   const [contacts, setContacts] = useState<ContactRow[]>(initialContacts);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string>("");
+  const [search, setSearch] = useState(initialSearch);
+  const [typeFilter, setTypeFilter] = useState(initialTypeFilter);
   const [activeTab, setActiveTab] = useState("info");
+  const searchTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const [relatedMeetings, setRelatedMeetings] = useState<
     { id: string; title: string; meeting_status: string; meeting_at: string | null }[]
@@ -123,34 +137,37 @@ export function ContactsClient({
     { id: string; about: string; call_status: string; due_date: string | null }[]
   >([]);
 
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  // Navigate with search params
+  function navigate(overrides: { q?: string; type?: string; page?: number }) {
+    const params = new URLSearchParams();
+    const q = overrides.q ?? search;
+    const type = overrides.type ?? typeFilter;
+    const page = overrides.page ?? 1;
+    if (q) params.set("q", q);
+    if (type) params.set("type", type);
+    if (page > 1) params.set("page", String(page));
+    router.push(`/contacts${params.toString() ? `?${params}` : ""}`);
+  }
+
+  function handleSearchChange(value: string) {
+    setSearch(value);
+    clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      navigate({ q: value, page: 1 });
+    }, 300);
+  }
+
+  function handleTypeChange(value: string) {
+    setTypeFilter(value);
+    navigate({ type: value, page: 1 });
+  }
+
   const companyOptions: RelationOption[] = useMemo(
     () => companies.map((c) => ({ id: c.id, label: c.name })),
     [companies]
   );
-
-  const assistantOptions: RelationOption[] = useMemo(
-    () =>
-      contacts
-        .filter((c) => c.type === "assistant")
-        .map((c) => ({ id: c.id, label: c.full_name })),
-    [contacts]
-  );
-
-  const filtered = useMemo(() => {
-    let list = [...contacts];
-    if (search) {
-      const q = search.toLowerCase();
-      list = list.filter(
-        (c) =>
-          c.full_name.toLowerCase().includes(q) ||
-          c.title?.toLowerCase().includes(q) ||
-          c.company?.name.toLowerCase().includes(q) ||
-          c.email_office?.toLowerCase().includes(q)
-      );
-    }
-    if (typeFilter) list = list.filter((c) => c.type === typeFilter);
-    return list;
-  }, [contacts, search, typeFilter]);
 
   function openNew() {
     setEditingId(null);
@@ -257,11 +274,11 @@ export function ContactsClient({
   }, [editingId, supabase]);
 
   function getPreferredPhone(c: ContactRow): string {
-    if (c.preferred_phone === "cell" && c.phone_cell) return c.phone_cell;
-    if (c.preferred_phone === "office" && c.phone_office) return c.phone_office;
-    if (c.preferred_phone === "home" && c.phone_home) return c.phone_home;
-    if (c.preferred_phone === "other" && c.phone_other) return c.phone_other;
-    return c.phone_cell || c.phone_office || "—";
+    if (c.preferred_phone === "cell" && c.phone_cell) return formatPhone(c.phone_cell);
+    if (c.preferred_phone === "office" && c.phone_office) return formatPhone(c.phone_office);
+    if (c.preferred_phone === "home" && c.phone_home) return formatPhone(c.phone_home);
+    if (c.preferred_phone === "other" && c.phone_other) return formatPhone(c.phone_other);
+    return formatPhone(c.phone_cell || c.phone_office);
   }
 
   function getPreferredEmail(c: ContactRow): string {
@@ -303,14 +320,14 @@ export function ContactsClient({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
           <input
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Search contacts..."
             className="w-full rounded-md border border-zinc-200 bg-white py-1.5 pl-9 pr-3 text-sm outline-none placeholder:text-zinc-400 hover:border-zinc-300 focus:border-zinc-400 transition-colors"
           />
         </div>
         <select
           value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
+          onChange={(e) => handleTypeChange(e.target.value)}
           className="rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 outline-none hover:border-zinc-300"
         >
           <option value="">All Types</option>
@@ -319,7 +336,7 @@ export function ContactsClient({
           ))}
         </select>
         <span className="text-xs text-zinc-400">
-          {filtered.length} contact{filtered.length !== 1 ? "s" : ""}
+          {totalCount.toLocaleString()} contact{totalCount !== 1 ? "s" : ""}
         </span>
       </div>
 
@@ -337,15 +354,15 @@ export function ContactsClient({
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {contacts.length === 0 ? (
               <tr>
                 <td colSpan={6} className="px-3 py-12 text-center text-sm text-zinc-400">
                   <Contact className="mx-auto mb-2 h-8 w-8 text-zinc-300" />
-                  No contacts found.
+                  {search ? "No contacts match your search." : "No contacts found."}
                 </td>
               </tr>
             ) : (
-              filtered.map((contact) => (
+              contacts.map((contact) => (
                 <tr
                   key={contact.id}
                   onClick={() => openEdit(contact)}
@@ -369,6 +386,36 @@ export function ContactsClient({
           </tbody>
         </table>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="mt-3 flex items-center justify-between">
+          <p className="text-xs text-zinc-400">
+            Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, totalCount)} of {totalCount.toLocaleString()}
+          </p>
+          <div className="flex items-center gap-1">
+            <button
+              disabled={currentPage <= 1}
+              onClick={() => navigate({ page: currentPage - 1 })}
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="h-3 w-3" />
+              Prev
+            </button>
+            <span className="px-2 text-xs text-zinc-500">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              disabled={currentPage >= totalPages}
+              onClick={() => navigate({ page: currentPage + 1 })}
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Next
+              <ChevronRight className="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Detail Panel */}
       <DetailPanel
@@ -524,10 +571,6 @@ export function ContactsClient({
                 <Input value={form.instagram || ""} onChange={(e) => setForm({ ...form, instagram: e.target.value || null })} />
               </Field>
             </div>
-
-            <Field label="Assistant">
-              <RelationPicker value={form.assistant_id} onChange={(id) => setForm({ ...form, assistant_id: id })} options={assistantOptions} placeholder="Select assistant..." />
-            </Field>
 
             <Field label="Notes">
               <Textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value || null })} placeholder="Notes..." />

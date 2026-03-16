@@ -70,6 +70,9 @@ export function ClientsClient({
   const [relatedSubmissions, setRelatedSubmissions] = useState<
     { id: string; description: string; status: string }[]
   >([]);
+  const [relatedMaterials, setRelatedMaterials] = useState<
+    { id: string; title: string; status: string; format: string | null; genre: string | null }[]
+  >([]);
 
   const companyOptions: RelationOption[] = useMemo(
     () => companies.map((c) => ({ id: c.id, label: c.name })),
@@ -110,7 +113,7 @@ export function ClientsClient({
     setPanelOpen(true);
 
     // Load related data
-    const [{ data: meetings }, { data: submissions }] = await Promise.all([
+    const [{ data: meetings }, { data: submissions }, { data: materials }] = await Promise.all([
       supabase
         .from("meeting_clients")
         .select("meeting:meetings(id, title, meeting_status, meeting_at)")
@@ -119,6 +122,11 @@ export function ClientsClient({
         .from("submission_clients")
         .select("submission:submissions(id, description, status)")
         .eq("client_id", client.id),
+      supabase
+        .from("client_materials")
+        .select("id, title, status, format, genre")
+        .eq("client_id", client.id)
+        .order("updated_at", { ascending: false }),
     ]);
     setRelatedMeetings(
       (meetings || [])
@@ -130,6 +138,7 @@ export function ClientsClient({
         .map((s: Record<string, unknown>) => s.submission as { id: string; description: string; status: string })
         .filter(Boolean)
     );
+    setRelatedMaterials(materials || []);
   }
 
   const handleSave = useCallback(async () => {
@@ -180,6 +189,7 @@ export function ClientsClient({
     { id: "info", label: "Info" },
     ...(editingId
       ? [
+          { id: "materials", label: "Materials" },
           { id: "meetings", label: "Meetings" },
           { id: "submissions", label: "Submissions" },
         ]
@@ -326,6 +336,41 @@ export function ClientsClient({
             <Field label="Notes">
               <Textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value || null })} placeholder="Notes..." />
             </Field>
+          </div>
+        )}
+
+        {activeTab === "materials" && (
+          <div className="space-y-2">
+            {relatedMaterials.length === 0 ? (
+              <p className="text-sm text-zinc-400 py-4 text-center">No materials yet.</p>
+            ) : (
+              relatedMaterials.map((m) => (
+                <div key={m.id} className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-black">{m.title}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {m.format && (
+                        <span className="text-[11px] text-zinc-400">{m.format}</span>
+                      )}
+                      {m.genre && (
+                        <span className="text-[11px] text-zinc-400">{m.genre}</span>
+                      )}
+                    </div>
+                  </div>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    m.status === "not_yet_reviewed" ? "bg-zinc-50 text-zinc-500 border-zinc-200" :
+                    m.status === "in_review" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                    m.status === "coverage_available" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                    m.status === "notes_given" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                    m.status === "editing" ? "bg-orange-50 text-orange-700 border-orange-200" :
+                    m.status === "final_draft" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                    "bg-zinc-50 text-zinc-500 border-zinc-200"
+                  }`}>
+                    {m.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         )}
 

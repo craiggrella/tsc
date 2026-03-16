@@ -93,7 +93,7 @@ export function DetailPanel({
 
 // Reusable form field wrapper
 interface FieldProps {
-  label: string;
+  label: React.ReactNode;
   children: React.ReactNode;
   className?: string;
 }

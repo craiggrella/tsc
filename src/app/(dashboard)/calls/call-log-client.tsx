@@ -8,6 +8,8 @@ import {
   Phone,
   Filter,
   ChevronDown,
+  Trash2,
+  ExternalLink,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -22,7 +24,7 @@ import {
   Select,
   Textarea,
 } from "@/components/shared/detail-panel";
-import { cn } from "@/lib/utils";
+import { cn, formatPhone } from "@/lib/utils";
 import type { CallStatus } from "@/types/database";
 
 // ─── Types ──────────────────────────────────────────
@@ -35,11 +37,20 @@ interface ContactData {
   phone_home: string | null;
   phone_other: string | null;
   preferred_phone: string | null;
+  email_office: string | null;
+  email_home: string | null;
+  preferred_email: string | null;
 }
 
 interface ClientData {
   id: string;
   full_name: string;
+}
+
+interface ProfileData {
+  id: string;
+  full_name: string;
+  role: string;
 }
 
 interface PersonOption extends ContactData {
@@ -68,8 +79,8 @@ interface CallRow {
 
 interface CallLogClientProps {
   initialCalls: CallRow[];
-  people: PersonOption[];
   clients: ClientData[];
+  profiles: ProfileData[];
   userId: string;
 }
 
@@ -99,15 +110,21 @@ const PHONE_OPTIONS = [
 
 type SortField = "due_date" | "log_time" | "priority" | "call_status";
 
+function nowLocal() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
 const emptyCall = {
   about: "",
   contact_id: null as string | null,
   client_id: null as string | null,
+  user_id: null as string | null,
   call_status: "to_call" as CallStatus,
   priority: null as "high" | "medium" | "low" | null,
   preferred_phone: null as string | null,
   phone_custom: null as string | null,
-  quick_connect: false,
   log_time: null as string | null,
   due_date: null as string | null,
   notes: null as string | null,
@@ -117,8 +134,8 @@ const emptyCall = {
 
 export function CallLogClient({
   initialCalls,
-  people,
   clients,
+  profiles,
   userId,
 }: CallLogClientProps) {
   const supabase = createClient();
@@ -127,9 +144,13 @@ export function CallLogClient({
   const [calls, setCalls] = useState<CallRow[]>(initialCalls);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState(emptyCall);
+  const [form, setForm] = useState<typeof emptyCall>({ ...emptyCall, user_id: userId, log_time: nowLocal() });
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkActing, setBulkActing] = useState(false);
+  // Cache of people we've fetched (for selected contact details)
+  const [peopleCache, setPeopleCache] = useState<Map<string, PersonOption>>(new Map());
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<CallStatus | "">("");
@@ -143,44 +164,114 @@ export function CallLogClient({
   useEffect(() => {
     if (searchParams.get("new") === "1") {
       setEditingId(null);
-      setForm({ ...emptyCall });
+      setForm({ ...emptyCall, user_id: userId, log_time: nowLocal() });
       setPanelOpen(true);
-      // Clean up URL
       router.replace("/calls", { scroll: false });
     }
-  }, [searchParams, router]);
+  }, [searchParams, router, userId]);
 
   useEffect(() => {
     function handleNewCall() {
       setEditingId(null);
-      setForm({ ...emptyCall });
+      setForm({ ...emptyCall, user_id: userId, log_time: nowLocal() });
       setPanelOpen(true);
     }
     window.addEventListener("new-call", handleNewCall);
     return () => window.removeEventListener("new-call", handleNewCall);
-  }, []);
-
-  // Build relation options
-  const peopleOptions: RelationOption[] = useMemo(
-    () =>
-      people.map((p) => ({
-        id: p.id,
-        label: p.full_name,
-        sublabel: p.title || undefined,
-      })),
-    [people]
-  );
+  }, [userId]);
 
   const clientOptions: RelationOption[] = useMemo(
     () => clients.map((c) => ({ id: c.id, label: c.full_name })),
     [clients]
   );
 
-  // Get phone numbers for selected contact
-  const selectedContact = useMemo(
-    () => people.find((p) => p.id === form.contact_id) || null,
-    [people, form.contact_id]
+  const profileOptions: RelationOption[] = useMemo(
+    () =>
+      profiles.map((p) => ({
+        id: p.id,
+        label: p.full_name,
+        sublabel: p.role,
+      })),
+    [profiles]
   );
+
+  // Search people from DB
+  const searchPeople = useCallback(
+    async (query: string): Promise<RelationOption[]> => {
+      const { data } = await supabase
+        .from("people")
+        .select("id, full_name, title, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email")
+        .ilike("full_name", `%${query}%`)
+        .order("full_name")
+        .limit(20);
+
+      if (data) {
+        setPeopleCache((prev) => {
+          const next = new Map(prev);
+          data.forEach((p) => next.set(p.id, p as PersonOption));
+          return next;
+        });
+        return data.map((p) => ({ id: p.id, label: p.full_name, sublabel: p.title || undefined }));
+      }
+      return [];
+    },
+    [supabase]
+  );
+
+  // Add new contact inline
+  const addContact = useCallback(
+    async (name: string) => {
+      const parts = name.split(" ");
+      const first_name = parts[0] || name;
+      const last_name = parts.slice(1).join(" ") || null;
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("org_id")
+        .eq("id", userId)
+        .single();
+
+      if (!profile?.org_id) return null;
+
+      const { data, error } = await supabase
+        .from("people")
+        .insert({
+          full_name: name,
+          first_name,
+          last_name,
+          org_id: profile.org_id,
+          department: [],
+        })
+        .select("id, full_name, title, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email")
+        .single();
+
+      if (error || !data) return null;
+
+      setPeopleCache((prev) => new Map(prev).set(data.id, data as PersonOption));
+      return { id: data.id, label: data.full_name };
+    },
+    [supabase, userId]
+  );
+
+  // Fetch contact details when a contact is selected (e.g. editing existing call)
+  useEffect(() => {
+    if (form.contact_id && !peopleCache.has(form.contact_id)) {
+      supabase
+        .from("people")
+        .select("id, full_name, title, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email")
+        .eq("id", form.contact_id)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setPeopleCache((prev) => new Map(prev).set(data.id, data as PersonOption));
+          }
+        });
+    }
+  }, [form.contact_id, peopleCache, supabase]);
+
+  // Get selected contact data from cache
+  const selectedContact = form.contact_id ? peopleCache.get(form.contact_id) || null : null;
+  const selectedContactLabel = selectedContact?.full_name || (form.contact_id ? undefined : undefined);
 
   const contactPhones = useMemo(() => {
     if (!selectedContact) return [];
@@ -194,6 +285,16 @@ export function CallLogClient({
     if (selectedContact.phone_other)
       phones.push({ key: "other", label: "Other", number: selectedContact.phone_other });
     return phones;
+  }, [selectedContact]);
+
+  const contactEmails = useMemo(() => {
+    if (!selectedContact) return [];
+    const emails: { key: string; label: string; address: string }[] = [];
+    if (selectedContact.email_office)
+      emails.push({ key: "office", label: "Office", address: selectedContact.email_office });
+    if (selectedContact.email_home)
+      emails.push({ key: "Home", label: "Home", address: selectedContact.email_home });
+    return emails;
   }, [selectedContact]);
 
   // Filtered & sorted calls
@@ -226,7 +327,7 @@ export function CallLogClient({
 
   function openNew() {
     setEditingId(null);
-    setForm({ ...emptyCall });
+    setForm({ ...emptyCall, user_id: userId, log_time: nowLocal() });
     setPanelOpen(true);
   }
 
@@ -236,11 +337,11 @@ export function CallLogClient({
       about: call.about,
       contact_id: call.contact_id,
       client_id: call.client_id,
+      user_id: call.user_id,
       call_status: call.call_status,
       priority: call.priority,
       preferred_phone: call.preferred_phone,
       phone_custom: call.phone_custom,
-      quick_connect: call.quick_connect,
       log_time: call.log_time,
       due_date: call.due_date,
       notes: call.notes,
@@ -268,35 +369,36 @@ export function CallLogClient({
         priority: form.priority,
         preferred_phone: form.preferred_phone,
         phone_custom: form.preferred_phone === "custom" ? form.phone_custom : null,
-        quick_connect: form.quick_connect,
+        quick_connect: false,
         log_time: form.log_time || null,
         due_date: form.due_date || null,
         notes: form.notes || null,
-        user_id: userId,
+        user_id: form.user_id || userId,
       };
 
+      const selectQuery =
+        "*, contact:people!contact_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email), client:clients!client_id(id, full_name)";
+
       if (editingId) {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("calls")
           .update(payload)
           .eq("id", editingId)
-          .select(
-            "*, contact:people!contact_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone), client:clients!client_id(id, full_name)"
-          )
+          .select(selectQuery)
           .single();
+        if (error) { console.error("Update call error:", error); return; }
         if (data) {
           setCalls((prev) =>
             prev.map((c) => (c.id === editingId ? (data as CallRow) : c))
           );
         }
       } else {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("calls")
           .insert(payload)
-          .select(
-            "*, contact:people!contact_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone), client:clients!client_id(id, full_name)"
-          )
+          .select(selectQuery)
           .single();
+        if (error) { console.error("Insert call error:", error); return; }
         if (data) {
           setCalls((prev) => [data as CallRow, ...prev]);
         }
@@ -326,7 +428,7 @@ export function CallLogClient({
       .update({ call_status: newStatus })
       .eq("id", callId)
       .select(
-        "*, contact:people!contact_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone), client:clients!client_id(id, full_name)"
+        "*, contact:people!contact_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email), client:clients!client_id(id, full_name)"
       )
       .single();
     if (data) {
@@ -336,13 +438,59 @@ export function CallLogClient({
     }
   }
 
+  // ─── Bulk actions ──────────────────────────────
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === filteredCalls.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filteredCalls.map((c) => c.id)));
+    }
+  }
+
+  async function bulkDelete() {
+    if (!confirm(`Delete ${selected.size} call${selected.size !== 1 ? "s" : ""}?`)) return;
+    setBulkActing(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase.from("calls").delete().in("id", ids);
+      setCalls((prev) => prev.filter((c) => !selected.has(c.id)));
+      setSelected(new Set());
+    } finally {
+      setBulkActing(false);
+    }
+  }
+
+  async function bulkStatusChange(newStatus: CallStatus) {
+    setBulkActing(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase.from("calls").update({ call_status: newStatus }).in("id", ids);
+      setCalls((prev) =>
+        prev.map((c) => (selected.has(c.id) ? { ...c, call_status: newStatus } : c))
+      );
+      setSelected(new Set());
+    } finally {
+      setBulkActing(false);
+    }
+  }
+
   // ─── Phone display helper ───────────────────────
 
   function getPhoneDisplay(call: CallRow): string {
-    if (call.preferred_phone === "custom" && call.phone_custom) return call.phone_custom;
+    if (call.preferred_phone === "custom" && call.phone_custom) return formatPhone(call.phone_custom);
     if (call.contact && call.preferred_phone) {
       const key = `phone_${call.preferred_phone}` as keyof ContactData;
-      return (call.contact[key] as string) || "—";
+      return formatPhone(call.contact[key] as string);
     }
     return "—";
   }
@@ -416,11 +564,57 @@ export function CallLogClient({
         </span>
       </div>
 
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="mt-3 flex items-center gap-3 rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2">
+          <span className="text-xs font-medium text-zinc-700">
+            {selected.size} selected
+          </span>
+          <div className="h-4 w-px bg-zinc-300" />
+          <select
+            disabled={bulkActing}
+            onChange={(e) => {
+              if (e.target.value) bulkStatusChange(e.target.value as CallStatus);
+              e.target.value = "";
+            }}
+            className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 outline-none hover:border-zinc-300"
+            defaultValue=""
+          >
+            <option value="" disabled>Change status...</option>
+            {CALL_STATUSES.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={bulkDelete}
+            disabled={bulkActing}
+            className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-1 text-xs text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+          >
+            <Trash2 className="h-3 w-3" />
+            Delete
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="ml-auto text-xs text-zinc-400 hover:text-zinc-600"
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
+              <th className="w-10 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  checked={filteredCalls.length > 0 && selected.size === filteredCalls.length}
+                  onChange={toggleSelectAll}
+                  className="accent-black"
+                />
+              </th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">
                 About
               </th>
@@ -475,7 +669,7 @@ export function CallLogClient({
             {filteredCalls.length === 0 ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-3 py-12 text-center text-sm text-zinc-400"
                 >
                   <Phone className="mx-auto mb-2 h-8 w-8 text-zinc-300" />
@@ -487,8 +681,19 @@ export function CallLogClient({
                 <tr
                   key={call.id}
                   onClick={() => openEdit(call)}
-                  className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
+                  className={cn(
+                    "border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors",
+                    selected.has(call.id) && "bg-zinc-50"
+                  )}
                 >
+                  <td className="w-10 px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(call.id)}
+                      onChange={() => toggleSelect(call.id)}
+                      className="accent-black"
+                    />
+                  </td>
                   <td className="px-3 py-2.5 font-medium text-black max-w-[200px] truncate">
                     {call.about || "—"}
                   </td>
@@ -569,15 +774,21 @@ export function CallLogClient({
         }
       >
         <div className="space-y-4">
-          <Field label="About">
-            <Input
-              value={form.about}
-              onChange={(e) => setForm({ ...form, about: e.target.value })}
-              placeholder="What is this call about?"
-            />
-          </Field>
-
-          <Field label="Contact">
+          {/* Contact (top) */}
+          <Field label={
+            <span className="flex items-center gap-1.5">
+              Contact
+              {form.contact_id && selectedContact && (
+                <a
+                  href={`/contacts?q=${encodeURIComponent(selectedContact.full_name)}`}
+                  className="inline-flex items-center gap-0.5 text-[11px] font-normal text-zinc-400 hover:text-black transition-colors"
+                  title="View full contact record"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </span>
+          }>
             <RelationPicker
               value={form.contact_id}
               onChange={(id) =>
@@ -588,46 +799,68 @@ export function CallLogClient({
                   phone_custom: null,
                 })
               }
-              options={peopleOptions}
-              placeholder="Select contact..."
+              options={[]}
+              onSearch={searchPeople}
+              selectedLabel={selectedContact?.full_name}
+              placeholder="Search contacts..."
+              onAdd={addContact}
+              addLabel="Add contact"
             />
           </Field>
 
-          {/* Phone section — shows when contact is selected */}
+          {/* Contact info card — shows when contact is selected */}
+          {selectedContact && (contactPhones.length > 0 || contactEmails.length > 0) && (
+            <div className="rounded-md border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 space-y-1.5">
+              <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+                Contact Info
+              </p>
+              {contactPhones.map((p) => (
+                <div key={p.key} className="flex items-center gap-2 text-xs">
+                  <span className="w-12 font-medium text-zinc-400">{p.label}</span>
+                  <span className="font-mono text-zinc-700">{formatPhone(p.number)}</span>
+                </div>
+              ))}
+              {contactEmails.map((e) => (
+                <div key={e.key} className="flex items-center gap-2 text-xs">
+                  <span className="w-12 font-medium text-zinc-400">{e.label}</span>
+                  <span className="text-zinc-700">{e.address}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Preferred phone method — shows when contact has phones */}
           {form.contact_id && (
-            <Field label="Phone">
-              <div className="space-y-2">
-                {contactPhones.length > 0 ? (
-                  <div className="space-y-1">
-                    {contactPhones.map((p) => (
-                      <label
-                        key={p.key}
-                        className={cn(
-                          "flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm cursor-pointer transition-colors",
-                          form.preferred_phone === p.key
-                            ? "border-black bg-zinc-50"
-                            : "border-zinc-200 hover:border-zinc-300"
-                        )}
-                      >
-                        <input
-                          type="radio"
-                          name="phone"
-                          checked={form.preferred_phone === p.key}
-                          onChange={() =>
-                            setForm({ ...form, preferred_phone: p.key })
-                          }
-                          className="accent-black"
-                        />
-                        <span className="text-xs font-medium text-zinc-500 w-12">
-                          {p.label}
-                        </span>
-                        <span className="font-mono text-xs text-black">
-                          {p.number}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                ) : (
+            <Field label="Preferred Phone">
+              <div className="space-y-1">
+                {contactPhones.map((p) => (
+                  <label
+                    key={p.key}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm cursor-pointer transition-colors",
+                      form.preferred_phone === p.key
+                        ? "border-black bg-zinc-50"
+                        : "border-zinc-200 hover:border-zinc-300"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="phone"
+                      checked={form.preferred_phone === p.key}
+                      onChange={() =>
+                        setForm({ ...form, preferred_phone: p.key })
+                      }
+                      className="accent-black"
+                    />
+                    <span className="text-xs font-medium text-zinc-500 w-12">
+                      {p.label}
+                    </span>
+                    <span className="font-mono text-xs text-black">
+                      {formatPhone(p.number)}
+                    </span>
+                  </label>
+                ))}
+                {contactPhones.length === 0 && (
                   <p className="text-xs text-zinc-400">
                     No phone numbers on file for this contact.
                   </p>
@@ -667,15 +900,7 @@ export function CallLogClient({
             </Field>
           )}
 
-          <Field label="Re: Client">
-            <RelationPicker
-              value={form.client_id}
-              onChange={(id) => setForm({ ...form, client_id: id })}
-              options={clientOptions}
-              placeholder="Select client..."
-            />
-          </Field>
-
+          {/* Status & Priority */}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Status">
               <Select
@@ -704,6 +929,36 @@ export function CallLogClient({
             </Field>
           </div>
 
+          {/* About */}
+          <Field label="About">
+            <Input
+              value={form.about}
+              onChange={(e) => setForm({ ...form, about: e.target.value })}
+              placeholder="What is this call about?"
+            />
+          </Field>
+
+          {/* Re: Client */}
+          <Field label="Re: Client">
+            <RelationPicker
+              value={form.client_id}
+              onChange={(id) => setForm({ ...form, client_id: id })}
+              options={clientOptions}
+              placeholder="Select client..."
+            />
+          </Field>
+
+          {/* Who Makes the Call */}
+          <Field label="Who Makes the Call">
+            <RelationPicker
+              value={form.user_id}
+              onChange={(id) => setForm({ ...form, user_id: id })}
+              options={profileOptions}
+              placeholder="Select team member..."
+            />
+          </Field>
+
+          {/* Due Date & Log Time */}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Due Date">
               <Input
@@ -725,30 +980,51 @@ export function CallLogClient({
             </Field>
           </div>
 
-          <Field label="Quick Connect">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.quick_connect}
-                onChange={(e) =>
-                  setForm({ ...form, quick_connect: e.target.checked })
-                }
-                className="accent-black"
-              />
-              <span className="text-sm text-zinc-600">
-                Mark as quick connect
-              </span>
-            </label>
-          </Field>
-
+          {/* Notes — rich text via contentEditable */}
           <Field label="Notes">
-            <Textarea
-              value={form.notes || ""}
-              onChange={(e) =>
-                setForm({ ...form, notes: e.target.value || null })
+            <div
+              contentEditable
+              suppressContentEditableWarning
+              onBlur={(e) =>
+                setForm({
+                  ...form,
+                  notes: e.currentTarget.innerHTML || null,
+                })
               }
-              placeholder="Call notes..."
+              dangerouslySetInnerHTML={{ __html: form.notes || "" }}
+              className="min-h-[120px] rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-zinc-400 transition-colors [&_b]:font-bold [&_i]:italic [&_u]:underline"
+              data-placeholder="Call notes..."
             />
+            <div className="mt-1 flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => document.execCommand("bold")}
+                className="rounded px-1.5 py-0.5 text-xs font-bold text-zinc-500 hover:bg-zinc-100"
+              >
+                B
+              </button>
+              <button
+                type="button"
+                onClick={() => document.execCommand("italic")}
+                className="rounded px-1.5 py-0.5 text-xs italic text-zinc-500 hover:bg-zinc-100"
+              >
+                I
+              </button>
+              <button
+                type="button"
+                onClick={() => document.execCommand("underline")}
+                className="rounded px-1.5 py-0.5 text-xs underline text-zinc-500 hover:bg-zinc-100"
+              >
+                U
+              </button>
+              <button
+                type="button"
+                onClick={() => document.execCommand("insertUnorderedList")}
+                className="rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100"
+              >
+                &bull; List
+              </button>
+            </div>
           </Field>
         </div>
       </DetailPanel>

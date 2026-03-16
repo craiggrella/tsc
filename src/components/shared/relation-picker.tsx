@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Search, X, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +17,10 @@ interface RelationPickerProps {
   placeholder?: string;
   loading?: boolean;
   className?: string;
+  onAdd?: (name: string) => Promise<RelationOption | null>;
+  addLabel?: string;
+  onSearch?: (query: string) => Promise<RelationOption[]>;
+  selectedLabel?: string;
 }
 
 interface MultiRelationPickerProps {
@@ -35,9 +39,17 @@ export function RelationPicker({
   placeholder = "Select...",
   loading,
   className,
+  onAdd,
+  addLabel = "Add",
+  onSearch,
+  selectedLabel,
 }: RelationPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [asyncResults, setAsyncResults] = useState<RelationOption[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -50,13 +62,41 @@ export function RelationPicker({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const filtered = options.filter(
-    (o) =>
-      o.label.toLowerCase().includes(query.toLowerCase()) ||
-      o.sublabel?.toLowerCase().includes(query.toLowerCase())
-  );
+  // Stable ref for onSearch so the effect doesn't re-fire on function identity changes
+  const onSearchRef = useRef(onSearch);
+  onSearchRef.current = onSearch;
+
+  // Async search effect
+  useEffect(() => {
+    if (!onSearchRef.current || !open) return;
+    if (!query || query.length < 2) {
+      setAsyncResults([]);
+      return;
+    }
+    clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const results = await onSearchRef.current!(query);
+        setAsyncResults(results);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(searchTimeout.current);
+  }, [query, open]);
+
+  const isAsync = !!onSearch;
+  const filtered = isAsync
+    ? asyncResults
+    : options.filter(
+        (o) =>
+          o.label.toLowerCase().includes(query.toLowerCase()) ||
+          o.sublabel?.toLowerCase().includes(query.toLowerCase())
+      );
 
   const selected = options.find((o) => o.id === value);
+  const displayLabel = selected?.label || selectedLabel;
 
   return (
     <div ref={ref} className={cn("relative", className)}>
@@ -65,8 +105,8 @@ export function RelationPicker({
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm text-left hover:border-zinc-300 transition-colors"
       >
-        <span className={selected ? "text-black" : "text-zinc-400"}>
-          {selected ? selected.label : placeholder}
+        <span className={displayLabel ? "text-black" : "text-zinc-400"}>
+          {displayLabel || placeholder}
         </span>
         {value ? (
           <X
@@ -92,38 +132,88 @@ export function RelationPicker({
             />
           </div>
           <div className="max-h-48 overflow-y-auto py-1">
-            {loading ? (
-              <p className="px-3 py-2 text-xs text-zinc-400">Loading...</p>
+            {loading || searching ? (
+              <p className="px-3 py-2 text-xs text-zinc-400">{searching ? "Searching..." : "Loading..."}</p>
+            ) : isAsync && query.length < 2 ? (
+              <p className="px-3 py-2 text-xs text-zinc-400">Type at least 2 characters to search...</p>
             ) : filtered.length === 0 ? (
-              <p className="px-3 py-2 text-xs text-zinc-400">No results</p>
+              <div className="px-3 py-2">
+                <p className="text-xs text-zinc-400">No results</p>
+                {onAdd && query.trim() && (
+                  <button
+                    type="button"
+                    disabled={adding}
+                    onClick={async () => {
+                      setAdding(true);
+                      try {
+                        const result = await onAdd(query.trim());
+                        if (result) {
+                          onChange(result.id);
+                          setOpen(false);
+                          setQuery("");
+                        }
+                      } finally {
+                        setAdding(false);
+                      }
+                    }}
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-black px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                  >
+                    {adding ? "Adding..." : `${addLabel} "${query.trim()}"`}
+                  </button>
+                )}
+              </div>
             ) : (
-              filtered.map((o) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  onClick={() => {
-                    onChange(o.id);
-                    setOpen(false);
-                    setQuery("");
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-zinc-50 transition-colors",
-                    o.id === value && "bg-zinc-50"
-                  )}
-                >
-                  <span className="flex-1 text-left">
-                    <span className="text-black">{o.label}</span>
-                    {o.sublabel && (
-                      <span className="ml-2 text-xs text-zinc-400">
-                        {o.sublabel}
-                      </span>
+              <>
+                {filtered.map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => {
+                      onChange(o.id);
+                      setOpen(false);
+                      setQuery("");
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-zinc-50 transition-colors",
+                      o.id === value && "bg-zinc-50"
                     )}
-                  </span>
-                  {o.id === value && (
-                    <Check className="h-3.5 w-3.5 text-black" />
-                  )}
-                </button>
-              ))
+                  >
+                    <span className="flex-1 text-left">
+                      <span className="text-black">{o.label}</span>
+                      {o.sublabel && (
+                        <span className="ml-2 text-xs text-zinc-400">
+                          {o.sublabel}
+                        </span>
+                      )}
+                    </span>
+                    {o.id === value && (
+                      <Check className="h-3.5 w-3.5 text-black" />
+                    )}
+                  </button>
+                ))}
+                {onAdd && query.trim() && !filtered.some((o) => o.label.toLowerCase() === query.trim().toLowerCase()) && (
+                  <button
+                    type="button"
+                    disabled={adding}
+                    onClick={async () => {
+                      setAdding(true);
+                      try {
+                        const result = await onAdd(query.trim());
+                        if (result) {
+                          onChange(result.id);
+                          setOpen(false);
+                          setQuery("");
+                        }
+                      } finally {
+                        setAdding(false);
+                      }
+                    }}
+                    className="flex w-full items-center gap-2 border-t border-zinc-100 px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-50 transition-colors"
+                  >
+                    <span className="text-xs">+ {addLabel} &ldquo;{query.trim()}&rdquo;</span>
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
