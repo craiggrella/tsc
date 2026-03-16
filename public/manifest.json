@@ -1,0 +1,22 @@
+{
+  "name": "TSC - The Shuman Company",
+  "short_name": "TSC",
+  "description": "Talent management platform for The Shuman Company",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/images/tsc-logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/images/tsc-logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
