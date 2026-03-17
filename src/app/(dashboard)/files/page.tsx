@@ -64,17 +64,26 @@ export default function FilesPage() {
   const [contextMenu, setContextMenu] = useState<{ item: BoxItem; x: number; y: number } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [boxError, setBoxError] = useState(false);
 
   const loadFolder = useCallback(async (folderId: string) => {
     setLoading(true);
     setSearch("");
+    setBoxError(false);
     try {
       const res = await fetch(`/api/box/folders/${folderId}`);
       const data = await res.json();
-      setItems(data.items || []);
-      setCurrentFolderId(folderId);
+      if (data.error) {
+        console.error("Box error:", data.error);
+        setBoxError(true);
+        setItems([]);
+      } else {
+        setItems(data.items || []);
+        setCurrentFolderId(folderId);
+      }
     } catch (err) {
       console.error("Failed to load folder:", err);
+      setBoxError(true);
       setItems([]);
     }
     setLoading(false);
@@ -250,6 +259,20 @@ export default function FilesPage() {
         <div className="mt-4 flex items-center justify-center rounded-lg border-2 border-dashed border-blue-400 bg-blue-50 py-12 text-sm text-blue-600">
           <Upload className="mr-2 h-5 w-5" />
           Drop files here to upload to Box
+        </div>
+      )}
+
+      {/* Box connection error */}
+      {boxError && !loading && (
+        <div className="mt-6 flex flex-col items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 py-8 text-center">
+          <p className="text-sm font-medium text-amber-800">Box connection expired</p>
+          <p className="text-xs text-amber-600">Click below to re-authorize Box access.</p>
+          <a
+            href="/api/box/auth"
+            className="inline-flex items-center gap-1.5 rounded-md bg-black px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 transition-colors"
+          >
+            Re-authorize Box
+          </a>
         </div>
       )}
 
