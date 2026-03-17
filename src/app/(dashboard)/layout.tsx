@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { Menu, Phone } from "lucide-react";
 import { SidebarNav } from "@/components/shared/sidebar-nav";
+import { OmniSearch } from "@/components/shared/omni-search";
 
 export default function DashboardLayout({
   children,
@@ -61,6 +62,9 @@ export default function DashboardLayout({
         {/* Main content */}
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+            <div className="flex justify-end mb-4">
+              <OmniSearch />
+            </div>
             {children}
           </div>
         </main>
