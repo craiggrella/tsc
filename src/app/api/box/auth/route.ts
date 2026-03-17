@@ -5,20 +5,24 @@ const BOX_CLIENT_SECRET = process.env.BOX_CLIENT_SECRET!;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+function getRedirectUri(request: NextRequest): string {
+  // Use X-Forwarded-Host or Host header to get the real public URL
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "localhost:3000";
+  const proto = request.headers.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
+  return `${proto}://${host}/api/box/auth`;
+}
+
 // GET: redirect to Box OAuth
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
+  const redirectUri = getRedirectUri(request);
 
   if (!code) {
     // Step 1: redirect to Box authorization
-    const redirectUri = `${request.nextUrl.origin}/api/box/auth`;
     const boxAuthUrl = `https://account.box.com/api/oauth2/authorize?response_type=code&client_id=${BOX_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}`;
     return NextResponse.redirect(boxAuthUrl);
   }
-
-  // Step 2: exchange code for tokens
-  const redirectUri = `${request.nextUrl.origin}/api/box/auth`;
   const res = await fetch("https://api.box.com/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -56,5 +60,7 @@ export async function GET(request: NextRequest) {
   });
 
   // Redirect to files page
-  return NextResponse.redirect(`${request.nextUrl.origin}/files`);
+  const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "localhost:3000";
+  const proto = request.headers.get("x-forwarded-proto") || (host.includes("localhost") ? "http" : "https");
+  return NextResponse.redirect(`${proto}://${host}/files`);
 }
