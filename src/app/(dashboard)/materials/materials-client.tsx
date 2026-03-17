@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
   RelationPicker,
+  MultiRelationPicker,
   type RelationOption,
 } from "@/components/shared/relation-picker";
 import {
@@ -38,7 +39,7 @@ interface MaterialRow {
   material_type: MaterialType;
   format: string | null;
   genre: string | null;
-  sub_genre: string | null;
+  sub_genre: string[] | string | null;
   status: MaterialStatus;
   box_file_id: string | null;
   file_url: string | null;
@@ -73,6 +74,47 @@ const DIRECTIONS: { value: string; label: string }[] = [
   { value: "Incoming", label: "Incoming" },
 ];
 
+const FORMATS: { value: string; label: string }[] = [
+  { value: "Feature", label: "Feature" },
+  { value: "Half-Hour", label: "Half-Hour" },
+  { value: "One-Hour", label: "One-Hour" },
+  { value: "Limited Series", label: "Limited Series" },
+  { value: "Short", label: "Short" },
+  { value: "Documentary", label: "Documentary" },
+  { value: "Animation", label: "Animation" },
+  { value: "Other", label: "Other" },
+];
+
+const GENRES: { value: string; label: string }[] = [
+  { value: "Action", label: "Action" },
+  { value: "Comedy", label: "Comedy" },
+  { value: "Drama", label: "Drama" },
+  { value: "Horror", label: "Horror" },
+  { value: "Sci-Fi", label: "Sci-Fi" },
+  { value: "Thriller", label: "Thriller" },
+  { value: "Romance", label: "Romance" },
+  { value: "Documentary", label: "Documentary" },
+  { value: "Family", label: "Family" },
+  { value: "Other", label: "Other" },
+];
+
+const SUB_GENRES: RelationOption[] = [
+  { id: "Romantic Comedy", label: "Romantic Comedy" },
+  { id: "Dark Comedy", label: "Dark Comedy" },
+  { id: "Psychological Thriller", label: "Psychological Thriller" },
+  { id: "Legal Drama", label: "Legal Drama" },
+  { id: "Medical Drama", label: "Medical Drama" },
+  { id: "Crime", label: "Crime" },
+  { id: "Procedural", label: "Procedural" },
+  { id: "Supernatural", label: "Supernatural" },
+  { id: "Coming of Age", label: "Coming of Age" },
+  { id: "Biopic", label: "Biopic" },
+  { id: "Period", label: "Period" },
+  { id: "Satire", label: "Satire" },
+  { id: "Mockumentary", label: "Mockumentary" },
+  { id: "Other", label: "Other" },
+];
+
 const emptyForm = {
   title: "",
   is_client_material: false,
@@ -81,7 +123,7 @@ const emptyForm = {
   material_type: "Script" as MaterialType,
   format: null as string | null,
   genre: null as string | null,
-  sub_genre: null as string | null,
+  sub_genre: [] as string[],
   status: "not_yet_reviewed" as MaterialStatus,
   box_file_id: null as string | null,
   file_url: null as string | null,
@@ -155,7 +197,7 @@ export function MaterialsClient({ userId }: MaterialsClientProps) {
       material_type: mat.material_type,
       format: mat.format,
       genre: mat.genre,
-      sub_genre: mat.sub_genre,
+      sub_genre: Array.isArray(mat.sub_genre) ? mat.sub_genre : mat.sub_genre ? [mat.sub_genre] : [],
       status: mat.status,
       box_file_id: mat.box_file_id,
       file_url: mat.file_url,
@@ -175,7 +217,7 @@ export function MaterialsClient({ userId }: MaterialsClientProps) {
         material_type: form.material_type,
         format: form.format || null,
         genre: form.genre || null,
-        sub_genre: form.sub_genre || null,
+        sub_genre: Array.isArray(form.sub_genre) && form.sub_genre.length > 0 ? form.sub_genre.join(", ") : null,
         status: form.status,
         box_file_id: form.box_file_id,
         file_url: form.file_url,
@@ -406,26 +448,29 @@ export function MaterialsClient({ userId }: MaterialsClientProps) {
           </Field>
 
           <Field label="Format">
-            <Input
+            <Select
               value={form.format || ""}
               onChange={(e) => setForm({ ...form, format: e.target.value || null })}
-              placeholder="e.g. Feature, Half-hour, One-hour..."
+              options={FORMATS}
+              placeholder="Select format..."
             />
           </Field>
 
           <Field label="Genre">
-            <Input
+            <Select
               value={form.genre || ""}
               onChange={(e) => setForm({ ...form, genre: e.target.value || null })}
-              placeholder="e.g. Comedy, Drama..."
+              options={GENRES}
+              placeholder="Select genre..."
             />
           </Field>
 
           <Field label="Sub-genre">
-            <Input
-              value={form.sub_genre || ""}
-              onChange={(e) => setForm({ ...form, sub_genre: e.target.value || null })}
-              placeholder="e.g. Romantic Comedy, Thriller..."
+            <MultiRelationPicker
+              value={Array.isArray(form.sub_genre) ? form.sub_genre : []}
+              onChange={(ids) => setForm({ ...form, sub_genre: ids })}
+              options={SUB_GENRES}
+              placeholder="Select sub-genres..."
             />
           </Field>
 
