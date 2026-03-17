@@ -461,16 +461,6 @@ export function ContactsClient({
             className="w-full rounded-md border border-zinc-200 bg-white py-1.5 pl-9 pr-3 text-sm outline-none placeholder:text-zinc-400 hover:border-zinc-300 focus:border-zinc-400 transition-colors"
           />
         </div>
-        <select
-          value={typeFilter}
-          onChange={(e) => handleTypeChange(e.target.value)}
-          className="rounded-md border border-zinc-200 bg-white px-2 py-1.5 text-xs text-zinc-700 outline-none hover:border-zinc-300"
-        >
-          <option value="">All Types</option>
-          {PERSON_TYPES.map((t) => (
-            <option key={t.value} value={t.value}>{t.label}</option>
-          ))}
-        </select>
         <span className="text-xs text-zinc-400">
           {totalCount.toLocaleString()} contact{totalCount !== 1 ? "s" : ""}
         </span>
