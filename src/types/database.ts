@@ -71,18 +71,6 @@ export interface Person {
   exec_level: ExecLevel | null;
   company_id: string | null;
   department: string[];
-  phone_cell: string | null;
-  phone_office: string | null;
-  phone_home: string | null;
-  phone_other: string | null;
-  preferred_phone: "cell" | "office" | "home" | "other" | null;
-  email_office: string | null;
-  email_home: string | null;
-  email_other: string | null;
-  preferred_email: "office" | "home" | "other" | null;
-  website: string | null;
-  linkedin: string | null;
-  instagram: string | null;
   assistant_id: string | null;
   notes: string | null;
   created_by: string | null;
@@ -115,8 +103,6 @@ export interface Client {
   full_name: string;
   first_name: string | null;
   last_name: string | null;
-  email: string | null;
-  phone: string | null;
   company_id: string | null;
   staff_level: string | null;
   notes: string | null;
@@ -145,6 +131,63 @@ export type ProjectStatus =
   | "cancelled";
 
 // ============================================
+// CONTACT INFO SUB-RECORDS
+// ============================================
+
+export type PhoneDesignation = "Cell" | "Office" | "Home" | "Assistant" | "Fax" | "Other";
+export type EmailDesignation = "Work" | "Personal" | "Assistant" | "Other";
+export type AddressDesignation = "Office" | "Home" | "Mailing" | "Other";
+
+export interface ContactPhone {
+  id: string;
+  org_id: string;
+  entity_type: "person" | "client";
+  entity_id: string;
+  designation: PhoneDesignation;
+  number: string;
+  is_primary: boolean;
+  created_at: string;
+}
+
+export interface ContactEmail {
+  id: string;
+  org_id: string;
+  entity_type: "person" | "client";
+  entity_id: string;
+  designation: EmailDesignation;
+  address: string;
+  is_primary: boolean;
+  created_at: string;
+}
+
+export interface ContactAddress {
+  id: string;
+  org_id: string;
+  entity_type: "person" | "client";
+  entity_id: string;
+  designation: AddressDesignation;
+  street: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  country: string | null;
+  is_primary: boolean;
+  created_at: string;
+}
+
+export type SocialPlatform = "Facebook" | "Instagram" | "YouTube" | "LinkedIn" | "Twitter/X" | "TikTok" | "IMDb" | "Website" | "Other";
+
+export interface ContactSocial {
+  id: string;
+  org_id: string;
+  entity_type: "person" | "client";
+  entity_id: string;
+  platform: SocialPlatform;
+  url: string;
+  created_at: string;
+}
+
+// ============================================
 // ACTIVITY ENTITIES
 // ============================================
 
@@ -157,7 +200,7 @@ export interface Call {
   user_id: string;
   call_status: CallStatus;
   priority: "high" | "medium" | "low" | null;
-  preferred_phone: "cell" | "office" | "home" | "other" | "custom" | null;
+  preferred_phone: string | null; // UUID of contact_phones record, or "custom"
   phone_custom: string | null;
   quick_connect: boolean;
   log_time: string | null;
@@ -172,7 +215,7 @@ export type CallStatus =
   | "incoming"
   | "left_word"
   | "returning"
-  | "connected";
+  | "completed";
 
 export interface Submission {
   id: string;

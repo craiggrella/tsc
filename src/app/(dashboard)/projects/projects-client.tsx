@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { Plus, Search, Clapperboard, Filter, Phone, Mail } from "lucide-react";
+import { Plus, Search, Clapperboard, Filter } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -26,12 +26,6 @@ interface PersonData {
   full_name: string;
   title: string | null;
   exec_level: string | null;
-  phone_cell: string | null;
-  phone_office: string | null;
-  preferred_phone: string | null;
-  email_office: string | null;
-  email_home: string | null;
-  preferred_email: string | null;
 }
 
 interface ProjectRow {
@@ -293,17 +287,7 @@ export function ProjectsClient({
     }
   }, [editingId, supabase]);
 
-  function getPreferredPhone(p: PersonData): string {
-    if (p.preferred_phone === "cell" && p.phone_cell) return p.phone_cell;
-    if (p.preferred_phone === "office" && p.phone_office) return p.phone_office;
-    return p.phone_cell || p.phone_office || "—";
-  }
-
-  function getPreferredEmail(p: PersonData): string {
-    if (p.preferred_email === "office" && p.email_office) return p.email_office;
-    if (p.preferred_email === "home" && p.email_home) return p.email_home;
-    return p.email_office || p.email_home || "—";
-  }
+  // Phone/email now in sub-records — shown on demand in expanded cards
 
   const tabsList = [
     { id: "info", label: "Info" },
@@ -521,31 +505,13 @@ export function ProjectsClient({
                     )}
                   </button>
                   {expandedPerson === person.id && (
-                    <div className="border-t border-zinc-100 bg-zinc-50/50 px-3 py-3 space-y-2">
-                      {(person.phone_cell || person.phone_office) && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <Phone className="h-3 w-3 text-zinc-400" />
-                          <span className="text-zinc-700 font-mono">
-                            {getPreferredPhone(person)}
-                          </span>
-                          {person.phone_cell && person.phone_office && (
-                            <span className="text-zinc-400">
-                              ({person.preferred_phone === "office" ? "office" : "cell"})
-                            </span>
-                          )}
-                        </div>
-                      )}
-                      {(person.email_office || person.email_home) && (
-                        <div className="flex items-center gap-2 text-xs">
-                          <Mail className="h-3 w-3 text-zinc-400" />
-                          <span className="text-zinc-700">
-                            {getPreferredEmail(person)}
-                          </span>
-                        </div>
-                      )}
-                      {!person.phone_cell && !person.phone_office && !person.email_office && !person.email_home && (
-                        <p className="text-xs text-zinc-400">No contact info on file.</p>
-                      )}
+                    <div className="border-t border-zinc-100 bg-zinc-50/50 px-3 py-3">
+                      <a
+                        href={`/contacts?open=${person.id}`}
+                        className="text-xs text-zinc-500 hover:text-black transition-colors"
+                      >
+                        View full contact record →
+                      </a>
                     </div>
                   )}
                 </div>

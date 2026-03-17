@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Calendar, Filter } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -71,6 +72,9 @@ export function MeetingsClient({
   projects,
 }: MeetingsClientProps) {
   const supabase = createClient();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const hasAutoOpened = useRef(false);
   const [meetings, setMeetings] = useState<MeetingRow[]>(initialMeetings);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -84,6 +88,18 @@ export function MeetingsClient({
   const [relationCache, setRelationCache] = useState<
     Record<string, { clientNames: string[]; personNames: string[] }>
   >({});
+
+  // Auto-open specific meeting from URL
+  useEffect(() => {
+    const openId = searchParams.get("open");
+    if (openId && !hasAutoOpened.current) {
+      hasAutoOpened.current = true;
+      const meeting = meetings.find((m) => m.id === openId);
+      if (meeting) openEdit(meeting);
+      router.replace("/meetings", { scroll: false });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const clientOptions: RelationOption[] = useMemo(
     () => clients.map((c) => ({ id: c.id, label: c.full_name })),

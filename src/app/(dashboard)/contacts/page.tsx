@@ -9,7 +9,7 @@ const PAGE_SIZE = 50;
 export default async function ContactsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; type?: string; page?: string }>;
+  searchParams: Promise<{ q?: string; type?: string; page?: string; open?: string }>;
 }) {
   const supabase = await createClient();
   const {
@@ -31,7 +31,7 @@ export default async function ContactsPage({
 
   if (search) {
     query = query.or(
-      `full_name.ilike.%${search}%,title.ilike.%${search}%,email_office.ilike.%${search}%`
+      `full_name.ilike.%${search}%,title.ilike.%${search}%`
     );
   }
   if (typeFilter) {
@@ -56,6 +56,7 @@ export default async function ContactsPage({
       pageSize={PAGE_SIZE}
       initialSearch={search}
       initialTypeFilter={typeFilter}
+      openContactId={params.open || null}
     />
   );
 }

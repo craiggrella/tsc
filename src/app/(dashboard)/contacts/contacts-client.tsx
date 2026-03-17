@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { Plus, Search, Contact, ChevronLeft, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -17,6 +18,20 @@ import {
   Textarea,
 } from "@/components/shared/detail-panel";
 import { formatPhone } from "@/lib/utils";
+import {
+  PhoneSection,
+  EmailSection,
+  AddressSection,
+  SocialSection,
+  syncPhones,
+  syncEmails,
+  syncAddresses,
+  syncSocials,
+  type PhoneRecord,
+  type EmailRecord,
+  type AddressRecord,
+  type SocialRecord,
+} from "@/components/shared/contact-info-editor";
 import type { PersonType, ExecLevel } from "@/types/database";
 
 interface CompanyData {
@@ -34,18 +49,6 @@ interface ContactRow {
   exec_level: ExecLevel | null;
   company_id: string | null;
   department: string[];
-  phone_cell: string | null;
-  phone_office: string | null;
-  phone_home: string | null;
-  phone_other: string | null;
-  preferred_phone: string | null;
-  email_office: string | null;
-  email_home: string | null;
-  email_other: string | null;
-  preferred_email: string | null;
-  website: string | null;
-  linkedin: string | null;
-  instagram: string | null;
   assistant_id: string | null;
   notes: string | null;
   created_at: string;
@@ -60,6 +63,7 @@ interface ContactsClientProps {
   pageSize: number;
   initialSearch: string;
   initialTypeFilter: string;
+  openContactId?: string | null;
 }
 
 const PERSON_TYPES: { value: PersonType; label: string }[] = [
@@ -92,18 +96,6 @@ const emptyForm = {
   exec_level: null as ExecLevel | null,
   company_id: null as string | null,
   department: [] as string[],
-  phone_cell: null as string | null,
-  phone_office: null as string | null,
-  phone_home: null as string | null,
-  phone_other: null as string | null,
-  preferred_phone: null as string | null,
-  email_office: null as string | null,
-  email_home: null as string | null,
-  email_other: null as string | null,
-  preferred_email: null as string | null,
-  website: null as string | null,
-  linkedin: null as string | null,
-  instagram: null as string | null,
   assistant_id: null as string | null,
   notes: null as string | null,
 };
@@ -116,6 +108,7 @@ export function ContactsClient({
   pageSize,
   initialSearch,
   initialTypeFilter,
+  openContactId,
 }: ContactsClientProps) {
   const supabase = createClient();
   const router = useRouter();
@@ -129,6 +122,7 @@ export function ContactsClient({
   const [typeFilter, setTypeFilter] = useState(initialTypeFilter);
   const [activeTab, setActiveTab] = useState("info");
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const hasAutoOpened = useRef(false);
 
   const [relatedMeetings, setRelatedMeetings] = useState<
     { id: string; title: string; meeting_status: string; meeting_at: string | null }[]
@@ -138,8 +132,38 @@ export function ContactsClient({
   >([]);
   const [callsHasMore, setCallsHasMore] = useState(false);
   const [callsLoading, setCallsLoading] = useState(false);
+  const [relatedSubmissions, setRelatedSubmissions] = useState<
+    { id: string; description: string; status: string }[]
+  >([]);
+
+  // Sub-record state for phones/emails/addresses
+  const [phones, setPhones] = useState<PhoneRecord[]>([]);
+  const [emails, setEmails] = useState<EmailRecord[]>([]);
+  const [addresses, setAddresses] = useState<AddressRecord[]>([]);
+  const [origPhoneIds, setOrigPhoneIds] = useState<Set<string>>(new Set());
+  const [origEmailIds, setOrigEmailIds] = useState<Set<string>>(new Set());
+  const [origAddressIds, setOrigAddressIds] = useState<Set<string>>(new Set());
+  const [socials, setSocials] = useState<SocialRecord[]>([]);
+  const [origSocialIds, setOrigSocialIds] = useState<Set<string>>(new Set());
 
   const totalPages = Math.ceil(totalCount / pageSize);
+
+  // Auto-open a specific contact if directed via openContactId
+  useEffect(() => {
+    if (openContactId && !hasAutoOpened.current) {
+      hasAutoOpened.current = true;
+      // Fetch the contact and open it
+      supabase
+        .from("people")
+        .select("*, company:companies!company_id(id, name)")
+        .eq("id", openContactId)
+        .single()
+        .then(({ data }) => {
+          if (data) openEdit(data as ContactRow);
+        });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openContactId]);
 
   // Navigate with search params
   function navigate(overrides: { q?: string; type?: string; page?: number }) {
@@ -174,6 +198,14 @@ export function ContactsClient({
   function openNew() {
     setEditingId(null);
     setForm({ ...emptyForm });
+    setPhones([]);
+    setEmails([]);
+    setAddresses([]);
+    setOrigPhoneIds(new Set());
+    setOrigEmailIds(new Set());
+    setOrigAddressIds(new Set());
+    setSocials([]);
+    setOrigSocialIds(new Set());
     setActiveTab("info");
     setPanelOpen(true);
   }
@@ -189,25 +221,37 @@ export function ContactsClient({
       exec_level: contact.exec_level,
       company_id: contact.company_id,
       department: contact.department,
-      phone_cell: contact.phone_cell,
-      phone_office: contact.phone_office,
-      phone_home: contact.phone_home,
-      phone_other: contact.phone_other,
-      preferred_phone: contact.preferred_phone,
-      email_office: contact.email_office,
-      email_home: contact.email_home,
-      email_other: contact.email_other,
-      preferred_email: contact.preferred_email,
-      website: contact.website,
-      linkedin: contact.linkedin,
-      instagram: contact.instagram,
       assistant_id: contact.assistant_id,
       notes: contact.notes,
     });
     setActiveTab("info");
     setPanelOpen(true);
 
-    const [{ data: meetings }, { data: calls }] = await Promise.all([
+    // Load sub-records and related data in parallel
+    const [{ data: phonesData }, { data: emailsData }, { data: addressesData }, { data: socialsData }, { data: meetings }, { data: calls }, { data: submissions }] = await Promise.all([
+      supabase
+        .from("contact_phones")
+        .select("id, designation, number, is_primary")
+        .eq("entity_type", "person")
+        .eq("entity_id", contact.id)
+        .order("is_primary", { ascending: false }),
+      supabase
+        .from("contact_emails")
+        .select("id, designation, address, is_primary")
+        .eq("entity_type", "person")
+        .eq("entity_id", contact.id)
+        .order("is_primary", { ascending: false }),
+      supabase
+        .from("contact_addresses")
+        .select("id, designation, street, city, state, zip, country, is_primary")
+        .eq("entity_type", "person")
+        .eq("entity_id", contact.id)
+        .order("is_primary", { ascending: false }),
+      supabase
+        .from("contact_socials")
+        .select("id, platform, url")
+        .eq("entity_type", "person")
+        .eq("entity_id", contact.id),
       supabase
         .from("meeting_people")
         .select("meeting:meetings(id, title, meeting_status, meeting_at)")
@@ -218,7 +262,26 @@ export function ContactsClient({
         .eq("contact_id", contact.id)
         .order("due_date", { ascending: false })
         .range(0, 20),
+      supabase
+        .from("submission_people")
+        .select("submission:submissions(id, description, status)")
+        .eq("person_id", contact.id),
     ]);
+
+    const pList = (phonesData || []) as PhoneRecord[];
+    const eList = (emailsData || []) as EmailRecord[];
+    const aList = (addressesData || []).map((a) => ({ ...a, street: a.street || "", city: a.city || "", state: a.state || "", zip: a.zip || "", country: a.country || "" })) as AddressRecord[];
+    setPhones(pList);
+    setEmails(eList);
+    setAddresses(aList);
+    setOrigPhoneIds(new Set(pList.filter((p) => p.id).map((p) => p.id!)));
+    setOrigEmailIds(new Set(eList.filter((e) => e.id).map((e) => e.id!)));
+    setOrigAddressIds(new Set(aList.filter((a) => a.id).map((a) => a.id!)));
+
+    const sList = (socialsData || []) as SocialRecord[];
+    setSocials(sList);
+    setOrigSocialIds(new Set(sList.filter((s) => s.id).map((s) => s.id!)));
+
     setRelatedMeetings(
       (meetings || [])
         .map((m: Record<string, unknown>) => m.meeting as { id: string; title: string; meeting_status: string; meeting_at: string | null })
@@ -226,6 +289,11 @@ export function ContactsClient({
     );
     setRelatedCalls(calls || []);
     setCallsHasMore((calls || []).length > 20);
+    setRelatedSubmissions(
+      (submissions || [])
+        .map((s: Record<string, unknown>) => s.submission as { id: string; description: string; status: string })
+        .filter(Boolean)
+    );
   }
 
   async function loadMoreCalls(contactId: string) {
@@ -250,6 +318,7 @@ export function ContactsClient({
     setSaving(true);
     try {
       const payload = { ...form };
+      let savedId = editingId;
       if (editingId) {
         const { data } = await supabase
           .from("people")
@@ -269,6 +338,7 @@ export function ContactsClient({
           .select("*, company:companies!company_id(id, name)")
           .single();
         if (data) {
+          savedId = data.id;
           setContacts((prev) =>
             [...prev, data as ContactRow].sort((a, b) =>
               a.full_name.localeCompare(b.full_name)
@@ -276,11 +346,20 @@ export function ContactsClient({
           );
         }
       }
+      // Sync sub-records
+      if (savedId) {
+        await Promise.all([
+          syncPhones("person", savedId, phones, origPhoneIds),
+          syncEmails("person", savedId, emails, origEmailIds),
+          syncAddresses("person", savedId, addresses, origAddressIds),
+          syncSocials("person", savedId, socials, origSocialIds),
+        ]);
+      }
       setPanelOpen(false);
     } finally {
       setSaving(false);
     }
-  }, [form, editingId, supabase]);
+  }, [form, editingId, supabase, phones, emails, addresses, socials, origPhoneIds, origEmailIds, origAddressIds, origSocialIds]);
 
   const handleDelete = useCallback(async () => {
     if (!editingId || !confirm("Delete this contact?")) return;
@@ -294,20 +373,8 @@ export function ContactsClient({
     }
   }, [editingId, supabase]);
 
-  function getPreferredPhone(c: ContactRow): string {
-    if (c.preferred_phone === "cell" && c.phone_cell) return formatPhone(c.phone_cell);
-    if (c.preferred_phone === "office" && c.phone_office) return formatPhone(c.phone_office);
-    if (c.preferred_phone === "home" && c.phone_home) return formatPhone(c.phone_home);
-    if (c.preferred_phone === "other" && c.phone_other) return formatPhone(c.phone_other);
-    return formatPhone(c.phone_cell || c.phone_office);
-  }
-
-  function getPreferredEmail(c: ContactRow): string {
-    if (c.preferred_email === "office" && c.email_office) return c.email_office;
-    if (c.preferred_email === "home" && c.email_home) return c.email_home;
-    if (c.preferred_email === "other" && c.email_other) return c.email_other;
-    return c.email_office || c.email_home || "—";
-  }
+  // Phone/email now in sub-records — not available in list view without extra queries
+  // Table shows basic info; detail panel shows full contact info
 
   const tabs = [
     { id: "info", label: "Info" },
@@ -315,6 +382,7 @@ export function ContactsClient({
       ? [
           { id: "meetings", label: "Meetings" },
           { id: "calls", label: "Calls" },
+          { id: "submissions", label: "Submissions" },
         ]
       : []),
   ];
@@ -399,8 +467,8 @@ export function ContactsClient({
                       </span>
                     ) : "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs font-mono">{getPreferredPhone(contact)}</td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs">{getPreferredEmail(contact)}</td>
+                  <td className="px-3 py-2.5 text-zinc-500 text-xs font-mono">—</td>
+                  <td className="px-3 py-2.5 text-zinc-500 text-xs">—</td>
                 </tr>
               ))
             )}
@@ -484,17 +552,33 @@ export function ContactsClient({
 
         {activeTab === "info" && (
           <div className="space-y-4">
-            <Field label="Full Name">
-              <Input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} placeholder="Full name" />
-            </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="First Name">
-                <Input value={form.first_name || ""} onChange={(e) => setForm({ ...form, first_name: e.target.value || null })} />
+                <Input
+                  value={form.first_name || ""}
+                  onChange={(e) => {
+                    const first = e.target.value || null;
+                    const full = [first, form.last_name].filter(Boolean).join(" ");
+                    setForm({ ...form, first_name: first, full_name: full });
+                  }}
+                  placeholder="First"
+                />
               </Field>
               <Field label="Last Name">
-                <Input value={form.last_name || ""} onChange={(e) => setForm({ ...form, last_name: e.target.value || null })} />
+                <Input
+                  value={form.last_name || ""}
+                  onChange={(e) => {
+                    const last = e.target.value || null;
+                    const full = [form.first_name, last].filter(Boolean).join(" ");
+                    setForm({ ...form, last_name: last, full_name: full });
+                  }}
+                  placeholder="Last"
+                />
               </Field>
             </div>
+            <Field label="Company">
+              <RelationPicker value={form.company_id} onChange={(id) => setForm({ ...form, company_id: id })} options={companyOptions} placeholder="Select company..." />
+            </Field>
             <Field label="Title">
               <Input value={form.title || ""} onChange={(e) => setForm({ ...form, title: e.target.value || null })} placeholder="Job title" />
             </Field>
@@ -507,7 +591,7 @@ export function ContactsClient({
                   placeholder="Select..."
                 />
               </Field>
-              <Field label="Exec Level">
+              <Field label="Level">
                 <Select
                   value={form.exec_level || ""}
                   onChange={(e) => setForm({ ...form, exec_level: (e.target.value || null) as ExecLevel | null })}
@@ -516,82 +600,12 @@ export function ContactsClient({
                 />
               </Field>
             </div>
-            <Field label="Company">
-              <RelationPicker value={form.company_id} onChange={(id) => setForm({ ...form, company_id: id })} options={companyOptions} placeholder="Select company..." />
-            </Field>
 
-            {/* Phones */}
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-zinc-500">Phone Numbers</p>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Cell">
-                  <Input value={form.phone_cell || ""} onChange={(e) => setForm({ ...form, phone_cell: e.target.value || null })} />
-                </Field>
-                <Field label="Office">
-                  <Input value={form.phone_office || ""} onChange={(e) => setForm({ ...form, phone_office: e.target.value || null })} />
-                </Field>
-                <Field label="Home">
-                  <Input value={form.phone_home || ""} onChange={(e) => setForm({ ...form, phone_home: e.target.value || null })} />
-                </Field>
-                <Field label="Other">
-                  <Input value={form.phone_other || ""} onChange={(e) => setForm({ ...form, phone_other: e.target.value || null })} />
-                </Field>
-              </div>
-              <Field label="Preferred Phone">
-                <Select
-                  value={form.preferred_phone || ""}
-                  onChange={(e) => setForm({ ...form, preferred_phone: e.target.value || null })}
-                  options={[
-                    { value: "cell", label: "Cell" },
-                    { value: "office", label: "Office" },
-                    { value: "home", label: "Home" },
-                    { value: "other", label: "Other" },
-                  ]}
-                  placeholder="None"
-                />
-              </Field>
-            </div>
-
-            {/* Emails */}
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-zinc-500">Email Addresses</p>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Office">
-                  <Input type="email" value={form.email_office || ""} onChange={(e) => setForm({ ...form, email_office: e.target.value || null })} />
-                </Field>
-                <Field label="Home">
-                  <Input type="email" value={form.email_home || ""} onChange={(e) => setForm({ ...form, email_home: e.target.value || null })} />
-                </Field>
-              </div>
-              <Field label="Other Email">
-                <Input type="email" value={form.email_other || ""} onChange={(e) => setForm({ ...form, email_other: e.target.value || null })} />
-              </Field>
-              <Field label="Preferred Email">
-                <Select
-                  value={form.preferred_email || ""}
-                  onChange={(e) => setForm({ ...form, preferred_email: e.target.value || null })}
-                  options={[
-                    { value: "office", label: "Office" },
-                    { value: "home", label: "Home" },
-                    { value: "other", label: "Other" },
-                  ]}
-                  placeholder="None"
-                />
-              </Field>
-            </div>
-
-            {/* Social */}
-            <div className="grid grid-cols-3 gap-2">
-              <Field label="Website">
-                <Input value={form.website || ""} onChange={(e) => setForm({ ...form, website: e.target.value || null })} />
-              </Field>
-              <Field label="LinkedIn">
-                <Input value={form.linkedin || ""} onChange={(e) => setForm({ ...form, linkedin: e.target.value || null })} />
-              </Field>
-              <Field label="Instagram">
-                <Input value={form.instagram || ""} onChange={(e) => setForm({ ...form, instagram: e.target.value || null })} />
-              </Field>
-            </div>
+            {/* Phones / Emails / Addresses / Socials */}
+            <PhoneSection phones={phones} onChange={setPhones} />
+            <EmailSection emails={emails} onChange={setEmails} />
+            <AddressSection addresses={addresses} onChange={setAddresses} />
+            <SocialSection socials={socials} onChange={setSocials} />
 
             <Field label="Notes">
               <Textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value || null })} placeholder="Notes..." />
@@ -605,13 +619,17 @@ export function ContactsClient({
               <p className="text-sm text-zinc-400 py-4 text-center">No meetings yet.</p>
             ) : (
               relatedMeetings.map((m) => (
-                <div key={m.id} className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2">
+                <Link
+                  key={m.id}
+                  href={`/meetings?open=${m.id}`}
+                  className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2 hover:bg-zinc-50 transition-colors"
+                >
                   <div>
                     <p className="text-sm font-medium text-black">{m.title}</p>
                     <p className="text-xs text-zinc-500">{m.meeting_at ? new Date(m.meeting_at).toLocaleDateString() : "No date"}</p>
                   </div>
                   <StatusBadge status={m.meeting_status} />
-                </div>
+                </Link>
               ))
             )}
           </div>
@@ -624,13 +642,17 @@ export function ContactsClient({
             ) : (
               <>
                 {relatedCalls.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2">
+                  <Link
+                    key={c.id}
+                    href={`/calls?open=${c.id}`}
+                    className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2 hover:bg-zinc-50 transition-colors"
+                  >
                     <div>
                       <p className="text-sm font-medium text-black">{c.about}</p>
                       <p className="text-xs text-zinc-500">{c.due_date ? new Date(c.due_date).toLocaleDateString() : "No date"}</p>
                     </div>
                     <StatusBadge status={c.call_status} />
-                  </div>
+                  </Link>
                 ))}
                 {callsHasMore && editingId && (
                   <button
@@ -642,6 +664,26 @@ export function ContactsClient({
                   </button>
                 )}
               </>
+            )}
+          </div>
+        )}
+        {activeTab === "submissions" && (
+          <div className="space-y-2">
+            {relatedSubmissions.length === 0 ? (
+              <p className="text-sm text-zinc-400 py-4 text-center">No submissions yet.</p>
+            ) : (
+              relatedSubmissions.map((s) => (
+                <div key={s.id} className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2">
+                  <p className="text-sm font-medium text-black">{s.description}</p>
+                  <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    s.status === "need_to_send" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                    s.status === "sent" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                    "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  }`}>
+                    {s.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                  </span>
+                </div>
+              ))
             )}
           </div>
         )}

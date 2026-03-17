@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Plus,
   ArrowUpDown,
@@ -32,27 +33,25 @@ import type { CallStatus } from "@/types/database";
 interface ContactData {
   id: string;
   full_name: string;
-  phone_cell: string | null;
-  phone_office: string | null;
-  phone_home: string | null;
-  phone_other: string | null;
-  preferred_phone: string | null;
-  email_office: string | null;
-  email_home: string | null;
-  preferred_email: string | null;
 }
 
 interface ClientData {
   id: string;
   full_name: string;
-  phone_cell: string | null;
-  phone_office: string | null;
-  phone_home: string | null;
-  phone_other: string | null;
-  preferred_phone: string | null;
-  email_office: string | null;
-  email_home: string | null;
-  preferred_email: string | null;
+}
+
+interface PhoneRecord {
+  id: string;
+  designation: string;
+  number: string;
+  is_primary: boolean;
+}
+
+interface EmailRecord {
+  id: string;
+  designation: string;
+  address: string;
+  is_primary: boolean;
 }
 
 interface ProfileData {
@@ -61,7 +60,9 @@ interface ProfileData {
   role: string;
 }
 
-interface PersonOption extends ContactData {
+interface PersonOption {
+  id: string;
+  full_name: string;
   title?: string | null;
 }
 
@@ -99,7 +100,7 @@ const CALL_STATUSES: { value: CallStatus; label: string }[] = [
   { value: "incoming", label: "Incoming" },
   { value: "left_word", label: "Left Word" },
   { value: "returning", label: "Returning" },
-  { value: "connected", label: "Connected" },
+  { value: "completed", label: "Completed" },
 ];
 
 const PRIORITIES = [
@@ -108,13 +109,6 @@ const PRIORITIES = [
   { value: "low", label: "Low" },
 ];
 
-const PHONE_OPTIONS = [
-  { value: "cell", label: "Cell" },
-  { value: "office", label: "Office" },
-  { value: "home", label: "Home" },
-  { value: "other", label: "Other" },
-  { value: "custom", label: "Custom" },
-];
 
 type SortField = "due_date" | "log_time" | "priority" | "call_status";
 
@@ -161,24 +155,36 @@ export function CallLogClient({
   // Cache of people/clients we've fetched (for selected contact details)
   const [peopleCache, setPeopleCache] = useState<Map<string, PersonOption>>(new Map());
   const [clientsCache, setClientsCache] = useState<Map<string, ClientData>>(new Map());
+  // Phone/email sub-records for the currently selected caller
+  const [callerPhones, setCallerPhones] = useState<PhoneRecord[]>([]);
+  const [callerEmails, setCallerEmails] = useState<EmailRecord[]>([]);
 
-  // Filters
-  const [statusFilter, setStatusFilter] = useState<CallStatus | "">("");
+
+  // Filters — default to "open" (everything except completed)
+  const [statusFilter, setStatusFilter] = useState<CallStatus | "open" | "">( "open");
   const [priorityFilter, setPriorityFilter] = useState<string>("");
 
   // Sorting
   const [sortField, setSortField] = useState<SortField>("due_date");
   const [sortAsc, setSortAsc] = useState(true);
 
-  // Auto-open new call from URL param or custom event
+  // Auto-open new call or specific call from URL params
   useEffect(() => {
     if (searchParams.get("new") === "1") {
       setEditingId(null);
       setForm({ ...emptyCall, user_id: userId, log_time: nowLocal() });
       setPanelOpen(true);
       router.replace("/calls", { scroll: false });
+    } else if (searchParams.get("open")) {
+      const callId = searchParams.get("open")!;
+      const call = calls.find((c) => c.id === callId);
+      if (call) {
+        openEdit(call);
+      }
+      router.replace("/calls", { scroll: false });
     }
-  }, [searchParams, router, userId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     function handleNewCall() {
@@ -211,13 +217,13 @@ export function CallLogClient({
       const [{ data: people }, { data: clientResults }] = await Promise.all([
         supabase
           .from("people")
-          .select("id, full_name, title, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email")
+          .select("id, full_name, title")
           .ilike("full_name", `%${query}%`)
           .order("full_name")
           .limit(15),
         supabase
           .from("clients")
-          .select("id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email")
+          .select("id, full_name")
           .ilike("full_name", `%${query}%`)
           .order("full_name")
           .limit(5),
@@ -272,7 +278,7 @@ export function CallLogClient({
           org_id: profile.org_id,
           department: [],
         })
-        .select("id, full_name, title, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email")
+        .select("id, full_name, title")
         .single();
 
       if (error || !data) return null;
@@ -288,7 +294,7 @@ export function CallLogClient({
     if (form.contact_id && !peopleCache.has(form.contact_id)) {
       supabase
         .from("people")
-        .select("id, full_name, title, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email")
+        .select("id, full_name, title")
         .eq("id", form.contact_id)
         .single()
         .then(({ data }) => {
@@ -304,7 +310,7 @@ export function CallLogClient({
     if (form.contact_type === "client" && form.client_id && !clientsCache.has(form.client_id)) {
       supabase
         .from("clients")
-        .select("id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email")
+        .select("id, full_name")
         .eq("id", form.client_id)
         .single()
         .then(({ data }) => {
@@ -315,39 +321,44 @@ export function CallLogClient({
     }
   }, [form.contact_type, form.client_id, clientsCache, supabase]);
 
-  // Get selected contact/client data from cache — unified phone/email source
+  // Get selected contact/client data from cache
   const selectedContact = form.contact_id ? peopleCache.get(form.contact_id) || null : null;
   const selectedClient = form.contact_type === "client" && form.client_id ? clientsCache.get(form.client_id) || null : null;
   const callerRecord = form.contact_type === "client" ? selectedClient : selectedContact;
 
-  const contactPhones = useMemo(() => {
-    if (!callerRecord) return [];
-    const phones: { key: string; label: string; number: string }[] = [];
-    if (callerRecord.phone_cell)
-      phones.push({ key: "cell", label: "Cell", number: callerRecord.phone_cell });
-    if (callerRecord.phone_office)
-      phones.push({ key: "office", label: "Office", number: callerRecord.phone_office });
-    if (callerRecord.phone_home)
-      phones.push({ key: "home", label: "Home", number: callerRecord.phone_home });
-    if (callerRecord.phone_other)
-      phones.push({ key: "other", label: "Other", number: callerRecord.phone_other });
-    return phones;
-  }, [callerRecord]);
-
-  const contactEmails = useMemo(() => {
-    if (!callerRecord) return [];
-    const emails: { key: string; label: string; address: string }[] = [];
-    if (callerRecord.email_office)
-      emails.push({ key: "office", label: "Office", address: callerRecord.email_office });
-    if (callerRecord.email_home)
-      emails.push({ key: "home", label: "Home", address: callerRecord.email_home });
-    return emails;
-  }, [callerRecord]);
+  // Fetch phone/email sub-records when caller changes
+  useEffect(() => {
+    const entityType = form.contact_type === "client" ? "client" : "person";
+    const entityId = form.contact_type === "client" ? form.client_id : form.contact_id;
+    if (!entityId) {
+      setCallerPhones([]);
+      setCallerEmails([]);
+      return;
+    }
+    Promise.all([
+      supabase
+        .from("contact_phones")
+        .select("id, designation, number, is_primary")
+        .eq("entity_type", entityType)
+        .eq("entity_id", entityId)
+        .order("is_primary", { ascending: false }),
+      supabase
+        .from("contact_emails")
+        .select("id, designation, address, is_primary")
+        .eq("entity_type", entityType)
+        .eq("entity_id", entityId)
+        .order("is_primary", { ascending: false }),
+    ]).then(([{ data: phones }, { data: emails }]) => {
+      setCallerPhones((phones || []) as PhoneRecord[]);
+      setCallerEmails((emails || []) as EmailRecord[]);
+    });
+  }, [form.contact_type, form.contact_id, form.client_id, supabase]);
 
   // Filtered & sorted calls
   const filteredCalls = useMemo(() => {
     let list = [...calls];
-    if (statusFilter) list = list.filter((c) => c.call_status === statusFilter);
+    if (statusFilter === "open") list = list.filter((c) => c.call_status !== "completed");
+    else if (statusFilter) list = list.filter((c) => c.call_status === statusFilter);
     if (priorityFilter) list = list.filter((c) => c.priority === priorityFilter);
 
     list.sort((a, b) => {
@@ -427,7 +438,7 @@ export function CallLogClient({
       };
 
       const selectQuery =
-        "*, contact:people!contact_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email), client:clients!client_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email)";
+        "*, contact:people!contact_id(id, full_name), client:clients!client_id(id, full_name)";
 
       if (editingId) {
         const { data, error } = await supabase
@@ -453,23 +464,17 @@ export function CallLogClient({
           setCalls((prev) => [data as CallRow, ...prev]);
         }
       }
-      // Write custom phone back to contact/client record
+      // Write custom phone back as a new contact_phones record
       if (form.preferred_phone === "custom" && form.phone_custom) {
-        if (form.contact_type === "person" && form.contact_id) {
-          await supabase.from("people").update({ phone_other: form.phone_custom }).eq("id", form.contact_id);
-          setPeopleCache((prev) => {
-            const next = new Map(prev);
-            const existing = next.get(form.contact_id!);
-            if (existing) next.set(form.contact_id!, { ...existing, phone_other: form.phone_custom });
-            return next;
-          });
-        } else if (form.contact_type === "client" && form.client_id) {
-          await supabase.from("clients").update({ phone_other: form.phone_custom }).eq("id", form.client_id);
-          setClientsCache((prev) => {
-            const next = new Map(prev);
-            const existing = next.get(form.client_id!);
-            if (existing) next.set(form.client_id!, { ...existing, phone_other: form.phone_custom });
-            return next;
+        const entityType = form.contact_type === "client" ? "client" : "person";
+        const entityId = form.contact_type === "client" ? form.client_id : form.contact_id;
+        if (entityId) {
+          await supabase.from("contact_phones").insert({
+            entity_type: entityType,
+            entity_id: entityId,
+            designation: "Other",
+            number: form.phone_custom,
+            is_primary: false,
           });
         }
       }
@@ -499,7 +504,7 @@ export function CallLogClient({
       .update({ call_status: newStatus })
       .eq("id", callId)
       .select(
-        "*, contact:people!contact_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email), client:clients!client_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email)"
+        "*, contact:people!contact_id(id, full_name), client:clients!client_id(id, full_name)"
       )
       .single();
     if (data) {
@@ -559,12 +564,9 @@ export function CallLogClient({
 
   function getPhoneDisplay(call: CallRow): string {
     if (call.preferred_phone === "custom" && call.phone_custom) return formatPhone(call.phone_custom);
-    const record = call.contact || call.client;
-    if (record && call.preferred_phone) {
-      const key = `phone_${call.preferred_phone}` as keyof typeof record;
-      const val = record[key];
-      if (typeof val === "string") return formatPhone(val);
-    }
+    // preferred_phone now stores a phone record UUID — we can't resolve it without a fetch
+    // Just show the custom number or "—" in the table; full info is in the detail panel
+    if (call.phone_custom) return formatPhone(call.phone_custom);
     return "—";
   }
 
@@ -599,9 +601,10 @@ export function CallLogClient({
         </div>
         <select
           value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as CallStatus | "")}
+          onChange={(e) => setStatusFilter(e.target.value as CallStatus | "open" | "")}
           className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 outline-none hover:border-zinc-300"
         >
+          <option value="open">Open</option>
           <option value="">All Statuses</option>
           {CALL_STATUSES.map((s) => (
             <option key={s.value} value={s.value}>
@@ -677,7 +680,7 @@ export function CallLogClient({
 
       {/* Table */}
       <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[900px] text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
               <th className="w-10 px-3 py-2.5">
@@ -854,14 +857,15 @@ export function CallLogClient({
           <Field label={
             <span className="flex items-center gap-1.5">
               Contact
-              {form.contact_type === "person" && form.contact_id && selectedContact && (
-                <a
-                  href={`/contacts?q=${encodeURIComponent(selectedContact.full_name)}`}
+              {form.contact_id && selectedContact && (
+                <Link
+                  href={`/contacts?open=${selectedContact.id}`}
                   className="inline-flex items-center gap-0.5 text-[11px] font-normal text-zinc-400 hover:text-black transition-colors"
                   title="View full contact record"
+                  prefetch
                 >
                   <ExternalLink className="h-3 w-3" />
-                </a>
+                </Link>
               )}
             </span>
           }>
@@ -894,36 +898,38 @@ export function CallLogClient({
           </Field>
 
           {/* Contact/Client info card — shows when caller is selected */}
-          {callerRecord && (contactPhones.length > 0 || contactEmails.length > 0) && (
+          {callerRecord && (callerPhones.length > 0 || callerEmails.length > 0) && (
             <div className="rounded-md border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 space-y-1.5">
               <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">
                 Contact Info
               </p>
-              {contactPhones.map((p) => (
-                <div key={p.key} className="flex items-center gap-2 text-xs">
-                  <span className="w-12 font-medium text-zinc-400">{p.label}</span>
+              {callerPhones.map((p) => (
+                <div key={p.id} className="flex items-center gap-2 text-xs">
+                  <span className="w-16 font-medium text-zinc-400">{p.designation}</span>
                   <span className="font-mono text-zinc-700">{formatPhone(p.number)}</span>
+                  {p.is_primary && <span className="text-amber-500 text-[10px]">★</span>}
                 </div>
               ))}
-              {contactEmails.map((e) => (
-                <div key={e.key} className="flex items-center gap-2 text-xs">
-                  <span className="w-12 font-medium text-zinc-400">{e.label}</span>
+              {callerEmails.map((e) => (
+                <div key={e.id} className="flex items-center gap-2 text-xs">
+                  <span className="w-16 font-medium text-zinc-400">{e.designation}</span>
                   <span className="text-zinc-700">{e.address}</span>
+                  {e.is_primary && <span className="text-amber-500 text-[10px]">★</span>}
                 </div>
               ))}
             </div>
           )}
 
-          {/* Preferred phone method — shows when contact or client has phones */}
+          {/* Preferred phone method — shows when caller has phones */}
           {(form.contact_id || (form.contact_type === "client" && form.client_id)) && (
             <Field label="Preferred Phone">
               <div className="space-y-1">
-                {contactPhones.map((p) => (
+                {callerPhones.map((p) => (
                   <label
-                    key={p.key}
+                    key={p.id}
                     className={cn(
                       "flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm cursor-pointer transition-colors",
-                      form.preferred_phone === p.key
+                      form.preferred_phone === p.id
                         ? "border-black bg-zinc-50"
                         : "border-zinc-200 hover:border-zinc-300"
                     )}
@@ -931,21 +937,21 @@ export function CallLogClient({
                     <input
                       type="radio"
                       name="phone"
-                      checked={form.preferred_phone === p.key}
+                      checked={form.preferred_phone === p.id}
                       onChange={() =>
-                        setForm({ ...form, preferred_phone: p.key })
+                        setForm({ ...form, preferred_phone: p.id })
                       }
                       className="accent-black"
                     />
-                    <span className="text-xs font-medium text-zinc-500 w-12">
-                      {p.label}
+                    <span className="text-xs font-medium text-zinc-500 w-16">
+                      {p.designation}
                     </span>
                     <span className="font-mono text-xs text-black">
                       {formatPhone(p.number)}
                     </span>
                   </label>
                 ))}
-                {contactPhones.length === 0 && (
+                {callerPhones.length === 0 && (
                   <p className="text-xs text-zinc-400">
                     No phone numbers on file for this contact.
                   </p>
@@ -967,7 +973,7 @@ export function CallLogClient({
                     }
                     className="accent-black"
                   />
-                  <span className="text-xs font-medium text-zinc-500 w-12">
+                  <span className="text-xs font-medium text-zinc-500 w-16">
                     Custom
                   </span>
                   {form.preferred_phone === "custom" && (
@@ -1157,7 +1163,7 @@ function StatusDropdown({
                 "incoming",
                 "left_word",
                 "returning",
-                "connected",
+                "completed",
               ] as CallStatus[]
             ).map((s) => (
               <button

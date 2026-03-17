@@ -1,9 +1,22 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { Plus, Search, Users, Phone } from "lucide-react";
+import { Plus, Search, Users } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { formatPhone } from "@/lib/utils";
+import {
+  PhoneSection,
+  EmailSection,
+  AddressSection,
+  SocialSection,
+  syncPhones,
+  syncEmails,
+  syncAddresses,
+  syncSocials,
+  type PhoneRecord,
+  type EmailRecord,
+  type AddressRecord,
+  type SocialRecord,
+} from "@/components/shared/contact-info-editor";
 import { createClient } from "@/lib/supabase/client";
 import {
   RelationPicker,
@@ -26,14 +39,6 @@ interface ClientRow {
   full_name: string;
   first_name: string | null;
   last_name: string | null;
-  phone_cell: string | null;
-  phone_office: string | null;
-  phone_home: string | null;
-  phone_other: string | null;
-  preferred_phone: string | null;
-  email_office: string | null;
-  email_home: string | null;
-  preferred_email: string | null;
   company_id: string | null;
   staff_level: string | null;
   notes: string | null;
@@ -50,14 +55,6 @@ const emptyForm = {
   full_name: "",
   first_name: null as string | null,
   last_name: null as string | null,
-  phone_cell: null as string | null,
-  phone_office: null as string | null,
-  phone_home: null as string | null,
-  phone_other: null as string | null,
-  preferred_phone: null as string | null,
-  email_office: null as string | null,
-  email_home: null as string | null,
-  preferred_email: null as string | null,
   company_id: null as string | null,
   staff_level: null as string | null,
   notes: null as string | null,
@@ -93,6 +90,16 @@ export function ClientsClient({
   const [callsHasMore, setCallsHasMore] = useState(false);
   const [callsLoading, setCallsLoading] = useState(false);
 
+  // Sub-record state
+  const [phones, setPhones] = useState<PhoneRecord[]>([]);
+  const [emails, setEmails] = useState<EmailRecord[]>([]);
+  const [addresses, setAddresses] = useState<AddressRecord[]>([]);
+  const [origPhoneIds, setOrigPhoneIds] = useState<Set<string>>(new Set());
+  const [origEmailIds, setOrigEmailIds] = useState<Set<string>>(new Set());
+  const [origAddressIds, setOrigAddressIds] = useState<Set<string>>(new Set());
+  const [socials, setSocials] = useState<SocialRecord[]>([]);
+  const [origSocialIds, setOrigSocialIds] = useState<Set<string>>(new Set());
+
   const companyOptions: RelationOption[] = useMemo(
     () => companies.map((c) => ({ id: c.id, label: c.name })),
     [companies]
@@ -104,7 +111,6 @@ export function ClientsClient({
     return clients.filter(
       (c) =>
         c.full_name.toLowerCase().includes(q) ||
-        c.email_office?.toLowerCase().includes(q) ||
         c.company?.name.toLowerCase().includes(q)
     );
   }, [clients, search]);
@@ -112,6 +118,14 @@ export function ClientsClient({
   function openNew() {
     setEditingId(null);
     setForm({ ...emptyForm });
+    setPhones([]);
+    setEmails([]);
+    setAddresses([]);
+    setOrigPhoneIds(new Set());
+    setOrigEmailIds(new Set());
+    setOrigAddressIds(new Set());
+    setSocials([]);
+    setOrigSocialIds(new Set());
     setActiveTab("info");
     setPanelOpen(true);
   }
@@ -122,14 +136,6 @@ export function ClientsClient({
       full_name: client.full_name,
       first_name: client.first_name,
       last_name: client.last_name,
-      phone_cell: client.phone_cell,
-      phone_office: client.phone_office,
-      phone_home: client.phone_home,
-      phone_other: client.phone_other,
-      preferred_phone: client.preferred_phone,
-      email_office: client.email_office,
-      email_home: client.email_home,
-      preferred_email: client.preferred_email,
       company_id: client.company_id,
       staff_level: client.staff_level,
       notes: client.notes,
@@ -139,8 +145,31 @@ export function ClientsClient({
     setCallsHasMore(false);
     setPanelOpen(true);
 
-    // Load related data
-    const [{ data: meetings }, { data: submissions }, { data: materials }, { data: calls }] = await Promise.all([
+    // Load sub-records and related data
+    const [{ data: phonesData }, { data: emailsData }, { data: addressesData }, { data: socialsData }, { data: meetings }, { data: submissions }, { data: materials }, { data: calls }] = await Promise.all([
+      supabase
+        .from("contact_phones")
+        .select("id, designation, number, is_primary")
+        .eq("entity_type", "client")
+        .eq("entity_id", client.id)
+        .order("is_primary", { ascending: false }),
+      supabase
+        .from("contact_emails")
+        .select("id, designation, address, is_primary")
+        .eq("entity_type", "client")
+        .eq("entity_id", client.id)
+        .order("is_primary", { ascending: false }),
+      supabase
+        .from("contact_addresses")
+        .select("id, designation, street, city, state, zip, country, is_primary")
+        .eq("entity_type", "client")
+        .eq("entity_id", client.id)
+        .order("is_primary", { ascending: false }),
+      supabase
+        .from("contact_socials")
+        .select("id, platform, url")
+        .eq("entity_type", "client")
+        .eq("entity_id", client.id),
       supabase
         .from("meeting_clients")
         .select("meeting:meetings(id, title, meeting_status, meeting_at)")
@@ -161,6 +190,21 @@ export function ClientsClient({
         .order("due_date", { ascending: false })
         .range(0, 20),
     ]);
+
+    const pList = (phonesData || []) as PhoneRecord[];
+    const eList = (emailsData || []) as EmailRecord[];
+    const aList = (addressesData || []).map((a) => ({ ...a, street: a.street || "", city: a.city || "", state: a.state || "", zip: a.zip || "", country: a.country || "" })) as AddressRecord[];
+    setPhones(pList);
+    setEmails(eList);
+    setAddresses(aList);
+    setOrigPhoneIds(new Set(pList.filter((p) => p.id).map((p) => p.id!)));
+    setOrigEmailIds(new Set(eList.filter((e) => e.id).map((e) => e.id!)));
+    setOrigAddressIds(new Set(aList.filter((a) => a.id).map((a) => a.id!)));
+
+    const sList = (socialsData || []) as SocialRecord[];
+    setSocials(sList);
+    setOrigSocialIds(new Set(sList.filter((s) => s.id).map((s) => s.id!)));
+
     setRelatedMeetings(
       (meetings || [])
         .map((m: Record<string, unknown>) => m.meeting as { id: string; title: string; meeting_status: string; meeting_at: string | null })
@@ -198,6 +242,7 @@ export function ClientsClient({
     setSaving(true);
     try {
       const payload = { ...form };
+      let savedId = editingId;
       if (editingId) {
         const { data } = await supabase
           .from("clients")
@@ -217,14 +262,23 @@ export function ClientsClient({
           .select("*, company:companies!company_id(id, name)")
           .single();
         if (data) {
+          savedId = data.id;
           setClients((prev) => [...prev, data as ClientRow].sort((a, b) => a.full_name.localeCompare(b.full_name)));
         }
+      }
+      if (savedId) {
+        await Promise.all([
+          syncPhones("client", savedId, phones, origPhoneIds),
+          syncEmails("client", savedId, emails, origEmailIds),
+          syncAddresses("client", savedId, addresses, origAddressIds),
+          syncSocials("client", savedId, socials, origSocialIds),
+        ]);
       }
       setPanelOpen(false);
     } finally {
       setSaving(false);
     }
-  }, [form, editingId, supabase]);
+  }, [form, editingId, supabase, phones, emails, addresses, socials, origPhoneIds, origEmailIds, origAddressIds, origSocialIds]);
 
   const handleDelete = useCallback(async () => {
     if (!editingId || !confirm("Delete this client?")) return;
@@ -283,8 +337,6 @@ export function ClientsClient({
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Name</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Email</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Phone</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Company</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Staff Level</th>
             </tr>
@@ -292,7 +344,7 @@ export function ClientsClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-12 text-center text-sm text-zinc-400">
+                <td colSpan={3} className="px-3 py-12 text-center text-sm text-zinc-400">
                   <Users className="mx-auto mb-2 h-8 w-8 text-zinc-300" />
                   No clients found.
                 </td>
@@ -305,8 +357,6 @@ export function ClientsClient({
                   className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                 >
                   <td className="px-3 py-2.5 font-medium text-black">{client.full_name}</td>
-                  <td className="px-3 py-2.5 text-zinc-500">{client.email_office || "—"}</td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs font-mono">{formatPhone(client.phone_office) || "—"}</td>
                   <td className="px-3 py-2.5 text-zinc-700">{client.company?.name || "—"}</td>
                   <td className="px-3 py-2.5 text-zinc-500">{client.staff_level || "—"}</td>
                 </tr>
@@ -373,30 +423,10 @@ export function ClientsClient({
                 <Input value={form.last_name || ""} onChange={(e) => setForm({ ...form, last_name: e.target.value || null })} />
               </Field>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Office Email">
-                <Input type="email" value={form.email_office || ""} onChange={(e) => setForm({ ...form, email_office: e.target.value || null })} />
-              </Field>
-              <Field label="Home Email">
-                <Input type="email" value={form.email_home || ""} onChange={(e) => setForm({ ...form, email_home: e.target.value || null })} />
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Cell Phone">
-                <Input value={form.phone_cell || ""} onChange={(e) => setForm({ ...form, phone_cell: e.target.value || null })} />
-              </Field>
-              <Field label="Office Phone">
-                <Input value={form.phone_office || ""} onChange={(e) => setForm({ ...form, phone_office: e.target.value || null })} />
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Home Phone">
-                <Input value={form.phone_home || ""} onChange={(e) => setForm({ ...form, phone_home: e.target.value || null })} />
-              </Field>
-              <Field label="Other Phone">
-                <Input value={form.phone_other || ""} onChange={(e) => setForm({ ...form, phone_other: e.target.value || null })} />
-              </Field>
-            </div>
+            <PhoneSection phones={phones} onChange={setPhones} />
+            <EmailSection emails={emails} onChange={setEmails} />
+            <AddressSection addresses={addresses} onChange={setAddresses} />
+            <SocialSection socials={socials} onChange={setSocials} />
             <Field label="Company">
               <RelationPicker value={form.company_id} onChange={(id) => setForm({ ...form, company_id: id })} options={companyOptions} placeholder="Select company..." />
             </Field>

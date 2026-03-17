@@ -19,7 +19,7 @@ export default async function ProjectsPage() {
       supabase
         .from("people")
         .select(
-          "id, full_name, title, exec_level, phone_cell, phone_office, preferred_phone, email_office, email_home, preferred_email"
+          "id, full_name, title, exec_level"
         )
         .order("full_name"),
     ]);
