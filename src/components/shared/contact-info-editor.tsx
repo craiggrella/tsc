@@ -448,7 +448,7 @@ export function SocialSection({
 import { createClient } from "@/lib/supabase/client";
 
 export async function syncPhones(
-  entityType: "person" | "client",
+  entityType: "person" | "client" | "profile",
   entityId: string,
   phones: PhoneRecord[],
   originalIds: Set<string>
@@ -487,7 +487,7 @@ export async function syncPhones(
 }
 
 export async function syncEmails(
-  entityType: "person" | "client",
+  entityType: "person" | "client" | "profile",
   entityId: string,
   emails: EmailRecord[],
   originalIds: Set<string>
@@ -524,7 +524,7 @@ export async function syncEmails(
 }
 
 export async function syncAddresses(
-  entityType: "person" | "client",
+  entityType: "person" | "client" | "profile",
   entityId: string,
   addresses: AddressRecord[],
   originalIds: Set<string>
