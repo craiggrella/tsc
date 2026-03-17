@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Plus, Search, Contact, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Contact } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -120,7 +120,6 @@ export function ContactsClient({
   const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [search, setSearch] = useState(initialSearch);
-  const [typeFilter, setTypeFilter] = useState(initialTypeFilter);
   const [activeTab, setActiveTab] = useState("info");
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
   const hasAutoOpened = useRef(false);
@@ -150,8 +149,6 @@ export function ContactsClient({
   const [origAddressIds, setOrigAddressIds] = useState<Set<string>>(new Set());
   const [socials, setSocials] = useState<SocialRecord[]>([]);
   const [origSocialIds, setOrigSocialIds] = useState<Set<string>>(new Set());
-
-  const totalPages = Math.ceil(totalCount / pageSize);
 
   // Fetch primary/first phone and email for contacts in the table
   useEffect(() => {
@@ -203,28 +200,23 @@ export function ContactsClient({
   }, [openContactId]);
 
   // Navigate with search params
-  function navigate(overrides: { q?: string; type?: string; page?: number }) {
-    const params = new URLSearchParams();
-    const q = overrides.q ?? search;
-    const type = overrides.type ?? typeFilter;
-    const page = overrides.page ?? 1;
-    if (q) params.set("q", q);
-    if (type) params.set("type", type);
-    if (page > 1) params.set("page", String(page));
-    router.push(`/contacts${params.toString() ? `?${params}` : ""}`);
-  }
-
   function handleSearchChange(value: string) {
     setSearch(value);
     clearTimeout(searchTimeout.current);
-    searchTimeout.current = setTimeout(() => {
-      navigate({ q: value, page: 1 });
-    }, 300);
-  }
-
-  function handleTypeChange(value: string) {
-    setTypeFilter(value);
-    navigate({ type: value, page: 1 });
+    if (!value.trim()) {
+      // Reset to initial data
+      setContacts(initialContacts);
+      return;
+    }
+    searchTimeout.current = setTimeout(async () => {
+      const { data } = await supabase
+        .from("people")
+        .select("*, company:companies!company_id(id, name)")
+        .ilike("full_name", `%${value}%`)
+        .order("full_name")
+        .limit(50);
+      if (data) setContacts(data as ContactRow[]);
+    }, 250);
   }
 
   const companyOptions: RelationOption[] = useMemo(
@@ -513,34 +505,11 @@ export function ContactsClient({
         </table>
       </div>
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="mt-3 flex items-center justify-between">
-          <p className="text-xs text-zinc-400">
-            Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, totalCount)} of {totalCount.toLocaleString()}
-          </p>
-          <div className="flex items-center gap-1">
-            <button
-              disabled={currentPage <= 1}
-              onClick={() => navigate({ page: currentPage - 1 })}
-              className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <ChevronLeft className="h-3 w-3" />
-              Prev
-            </button>
-            <span className="px-2 text-xs text-zinc-500">
-              Page {currentPage} of {totalPages}
-            </span>
-            <button
-              disabled={currentPage >= totalPages}
-              onClick={() => navigate({ page: currentPage + 1 })}
-              className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              Next
-              <ChevronRight className="h-3 w-3" />
-            </button>
-          </div>
-        </div>
+      {/* Result count */}
+      {contacts.length > 0 && (
+        <p className="mt-2 text-xs text-zinc-400">
+          Showing {contacts.length} contact{contacts.length !== 1 ? "s" : ""}
+        </p>
       )}
 
       {/* Detail Panel */}
