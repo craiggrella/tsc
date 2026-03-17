@@ -149,6 +149,7 @@ export function CallLogClient({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<typeof emptyCall>({ ...emptyCall, user_id: userId, log_time: nowLocal() });
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkActing, setBulkActing] = useState(false);
@@ -485,6 +486,7 @@ export function CallLogClient({
         // If the preferred phone was set to "new", link the first new phone to this call
         if (form.preferred_phone === "new" && inserted && inserted.length > 0 && savedCallId) {
           await supabase.from("calls").update({ preferred_phone: inserted[0].id, phone_custom: null }).eq("id", savedCallId);
+          setForm((prev) => ({ ...prev, preferred_phone: inserted[0].id }));
         }
         // Refresh callerPhones so they show immediately
         const { data: refreshed } = await supabase
@@ -497,7 +499,14 @@ export function CallLogClient({
         setNewPhones([]);
       }
 
-      setPanelOpen(false);
+      // If this was a new call, switch to editing mode so panel stays consistent
+      if (!editingId && savedCallId) {
+        setEditingId(savedCallId);
+      }
+
+      // Flash "Saved" briefly
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
     } finally {
       setSaving(false);
     }
@@ -857,14 +866,14 @@ export function CallLogClient({
                 onClick={() => setPanelOpen(false)}
                 className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 transition-colors"
               >
-                Cancel
+                Close
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving}
                 className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
               >
-                {saving ? "Saving..." : "Save"}
+                {saving ? "Saving..." : saved ? "Saved ✓" : "Save"}
               </button>
             </div>
           </div>
