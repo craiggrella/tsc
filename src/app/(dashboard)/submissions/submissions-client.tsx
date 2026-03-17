@@ -49,13 +49,13 @@ const RESPONSES = [
   { value: "hate", label: "Hate" },
 ];
 
-const REASONS = [
-  "general",
-  "meeting",
-  "staffing",
-  "at_their_request",
-  "spec_script",
-  "development",
+const DEFAULT_REASONS = [
+  "General",
+  "Meeting",
+  "Staffing",
+  "At Their Request",
+  "Spec Script",
+  "Development",
 ];
 
 const emptyForm = {
@@ -83,6 +83,7 @@ export function SubmissionsClient({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<SubmissionStatus | "">("");
 
@@ -97,6 +98,11 @@ export function SubmissionsClient({
   const personOptions: RelationOption[] = useMemo(
     () => people.map((p) => ({ id: p.id, label: p.full_name })),
     [people]
+  );
+  const [reasonList, setReasonList] = useState(DEFAULT_REASONS);
+  const reasonOptions: RelationOption[] = useMemo(
+    () => reasonList.map((r) => ({ id: r, label: r })),
+    [reasonList]
   );
   const [projectList, setProjectList] = useState(projects);
   const projectOptions: RelationOption[] = useMemo(
@@ -170,6 +176,15 @@ export function SubmissionsClient({
       supabase.from("submission_projects").select("project_id").eq("submission_id", sub.id),
     ]);
 
+    // Add any reasons from this record that aren't in our list
+    if (sub.reason) {
+      setReasonList((prev) => {
+        const set = new Set(prev);
+        sub.reason.forEach((r) => { if (!set.has(r)) set.add(r); });
+        return [...set];
+      });
+    }
+
     setForm({
       description: sub.description,
       status: sub.status,
@@ -188,8 +203,13 @@ export function SubmissionsClient({
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
+      // Auto-generate description from clients + people
+      const clientNames = form.client_ids.map((id) => clientOptions.find((c) => c.id === id)?.label).filter(Boolean);
+      const personNames = form.person_ids.map((id) => personOptions.find((p) => p.id === id)?.label).filter(Boolean);
+      const autoDesc = [clientNames.join(", "), personNames.join(", ")].filter(Boolean).join(" — ") || "Submission";
+
       const payload = {
-        description: form.description,
+        description: autoDesc,
         status: form.status,
         reason: form.reason,
         response: form.response,
@@ -258,7 +278,9 @@ export function SubmissionsClient({
         });
       }
 
-      setPanelOpen(false);
+      if (!editingId && subId) setEditingId(subId);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
     } finally {
       setSaving(false);
     }
@@ -276,14 +298,10 @@ export function SubmissionsClient({
     }
   }, [editingId, supabase]);
 
-  function toggleReason(r: string) {
-    setForm((prev) => ({
-      ...prev,
-      reason: prev.reason.includes(r)
-        ? prev.reason.filter((x) => x !== r)
-        : [...prev.reason, r],
-    }));
-  }
+  const createReason = useCallback(async (name: string): Promise<RelationOption | null> => {
+    setReasonList((prev) => [...prev, name]);
+    return { id: name, label: name };
+  }, []);
 
   return (
     <div>
@@ -408,73 +426,17 @@ export function SubmissionsClient({
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => setPanelOpen(false)} className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 transition-colors">
-                Cancel
+                Close
               </button>
               <button onClick={handleSave} disabled={saving} className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50">
-                {saving ? "Saving..." : "Save"}
+                {saving ? "Saving..." : saved ? "Saved ✓" : "Save"}
               </button>
             </div>
           </div>
         }
       >
         <div className="space-y-4">
-          <Field label="Description">
-            <Input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Submission description" />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Status">
-              <Select
-                value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value as SubmissionStatus })}
-                options={STATUSES}
-              />
-            </Field>
-            <Field label="Response">
-              <Select
-                value={form.response || ""}
-                onChange={(e) => setForm({ ...form, response: (e.target.value || null) as typeof form.response })}
-                options={RESPONSES}
-                placeholder="None"
-              />
-            </Field>
-          </div>
-          <Field label="Reason">
-            <div className="flex flex-wrap gap-1.5">
-              {REASONS.map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => toggleReason(r)}
-                  className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                    form.reason.includes(r)
-                      ? "border-black bg-black text-white"
-                      : "border-zinc-200 text-zinc-600 hover:border-zinc-300"
-                  }`}
-                >
-                  {r.replace(/_/g, " ")}
-                </button>
-              ))}
-            </div>
-          </Field>
-          <Field label="Submission Date">
-            <Input
-              type="date"
-              value={form.submission_date || ""}
-              onChange={(e) => setForm({ ...form, submission_date: e.target.value || null })}
-            />
-          </Field>
-          <Field label="Set Meeting">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.set_meeting}
-                onChange={(e) => setForm({ ...form, set_meeting: e.target.checked })}
-                className="accent-black"
-              />
-              <span className="text-sm text-zinc-600">Schedule a meeting</span>
-            </label>
-          </Field>
-          <Field label="Clients">
+          <Field label="Client">
             <MultiRelationPicker
               value={form.client_ids}
               onChange={(ids) => setForm({ ...form, client_ids: ids })}
@@ -499,6 +461,51 @@ export function SubmissionsClient({
               onAdd={createProject}
               addLabel="Create project"
             />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Status">
+              <Select
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value as SubmissionStatus })}
+                options={STATUSES}
+              />
+            </Field>
+            <Field label="Response">
+              <Select
+                value={form.response || ""}
+                onChange={(e) => setForm({ ...form, response: (e.target.value || null) as typeof form.response })}
+                options={RESPONSES}
+                placeholder="None"
+              />
+            </Field>
+          </div>
+          <Field label="Reason">
+            <MultiRelationPicker
+              value={form.reason}
+              onChange={(ids) => setForm({ ...form, reason: ids })}
+              options={reasonOptions}
+              placeholder="Select reasons..."
+              onAdd={createReason}
+              addLabel="Add reason"
+            />
+          </Field>
+          <Field label="Submission Date">
+            <Input
+              type="date"
+              value={form.submission_date || ""}
+              onChange={(e) => setForm({ ...form, submission_date: e.target.value || null })}
+            />
+          </Field>
+          <Field label="Set Meeting">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.set_meeting}
+                onChange={(e) => setForm({ ...form, set_meeting: e.target.checked })}
+                className="accent-black"
+              />
+              <span className="text-sm text-zinc-600">Schedule a meeting</span>
+            </label>
           </Field>
           <Field label="Notes">
             <Textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value || null })} placeholder="Notes..." />

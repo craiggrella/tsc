@@ -83,6 +83,7 @@ export function MeetingsClient({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("all");
   const [statusFilter, setStatusFilter] = useState<MeetingStatus | "">("");
@@ -326,7 +327,9 @@ export function MeetingsClient({
         });
       }
 
-      setPanelOpen(false);
+      if (!editingId && meetingId) setEditingId(meetingId);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
     } finally {
       setSaving(false);
     }
@@ -481,10 +484,10 @@ export function MeetingsClient({
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => setPanelOpen(false)} className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 transition-colors">
-                Cancel
+                Close
               </button>
               <button onClick={handleSave} disabled={saving} className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50">
-                {saving ? "Saving..." : "Save"}
+                {saving ? "Saving..." : saved ? "Saved ✓" : "Save"}
               </button>
             </div>
           </div>

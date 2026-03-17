@@ -72,6 +72,7 @@ export function ProjectsClient({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "">("");
@@ -269,7 +270,9 @@ export function ProjectsClient({
           return copy;
         });
       }
-      setPanelOpen(false);
+      if (!editingId && projectId) setEditingId(projectId);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
     } finally {
       setSaving(false);
     }
@@ -404,10 +407,10 @@ export function ProjectsClient({
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => setPanelOpen(false)} className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm text-zinc-600 hover:bg-zinc-50 transition-colors">
-                Cancel
+                Close
               </button>
               <button onClick={handleSave} disabled={saving} className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50">
-                {saving ? "Saving..." : "Save"}
+                {saving ? "Saving..." : saved ? "Saved ✓" : "Save"}
               </button>
             </div>
           </div>
