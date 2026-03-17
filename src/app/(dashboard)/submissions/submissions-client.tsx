@@ -342,7 +342,7 @@ export function SubmissionsClient({
 
       {/* Table */}
       <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[800px] text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Clients</th>
@@ -370,16 +370,16 @@ export function SubmissionsClient({
                     onClick={() => openEdit(sub)}
                     className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                   >
-                    <td className="px-3 py-2.5 text-zinc-700 text-xs">
+                    <td className="px-3 py-2.5 text-zinc-700 text-xs whitespace-nowrap">
                       {rel?.clientNames.join(", ") || "—"}
                     </td>
-                    <td className="px-3 py-2.5 text-zinc-700 text-xs">
+                    <td className="px-3 py-2.5 text-zinc-700 text-xs whitespace-nowrap">
                       {rel?.personNames.join(", ") || "—"}
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-2.5 whitespace-nowrap">
                       <StatusBadge status={sub.status} />
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-2.5 whitespace-nowrap">
                       <div className="flex flex-wrap gap-1">
                         {sub.reason.length > 0
                           ? sub.reason.map((r) => (
@@ -390,7 +390,7 @@ export function SubmissionsClient({
                           : "—"}
                       </div>
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-2.5 whitespace-nowrap">
                       <StatusBadge status={sub.response} />
                     </td>
                     <td className="px-3 py-2.5 text-zinc-500 text-xs">

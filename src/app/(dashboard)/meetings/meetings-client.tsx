@@ -90,7 +90,7 @@ export function MeetingsClient({
 
   // Relation display cache: meeting_id → { clients, people }
   const [relationCache, setRelationCache] = useState<
-    Record<string, { clientNames: string[]; personNames: string[] }>
+    Record<string, { clientNames: string[]; personNames: string[]; attendeeNames: string[] }>
   >({});
 
   // Auto-open specific meeting from URL
@@ -164,10 +164,14 @@ export function MeetingsClient({
         .from("meeting_people")
         .select("meeting_id, person:people(full_name)")
         .in("meeting_id", ids),
-    ]).then(([{ data: mc }, { data: mp }]) => {
+      supabase
+        .from("meeting_attendees")
+        .select("meeting_id, profile:profiles(full_name)")
+        .in("meeting_id", ids),
+    ]).then(([{ data: mc }, { data: mp }, { data: ma }]) => {
       const cache: typeof relationCache = {};
       for (const id of ids) {
-        cache[id] = { clientNames: [], personNames: [] };
+        cache[id] = { clientNames: [], personNames: [], attendeeNames: [] };
       }
       for (const row of mc || []) {
         const r = row as unknown as { meeting_id: string; client: { full_name: string } | null };
@@ -179,6 +183,12 @@ export function MeetingsClient({
         const r = row as unknown as { meeting_id: string; person: { full_name: string } | null };
         if (r.person && cache[r.meeting_id]) {
           cache[r.meeting_id].personNames.push(r.person.full_name);
+        }
+      }
+      for (const row of ma || []) {
+        const r = row as unknown as { meeting_id: string; profile: { full_name: string } | null };
+        if (r.profile && cache[r.meeting_id]) {
+          cache[r.meeting_id].attendeeNames.push(r.profile.full_name);
         }
       }
       setRelationCache((prev) => ({ ...prev, ...cache }));
@@ -407,12 +417,13 @@ export function MeetingsClient({
 
       {/* Table */}
       <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[900px] text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Client(s)</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Meeting With</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Status</th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Client(s)</th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Meeting With</th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Our Team</th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Status</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Date & Time</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Location</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Response</th>
@@ -421,7 +432,7 @@ export function MeetingsClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-12 text-center text-sm text-zinc-400">
+                <td colSpan={7} className="px-3 py-12 text-center text-sm text-zinc-400">
                   <Calendar className="mx-auto mb-2 h-8 w-8 text-zinc-300" />
                   No meetings found.
                 </td>
@@ -435,13 +446,16 @@ export function MeetingsClient({
                     onClick={() => openEdit(meeting)}
                     className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                   >
-                    <td className="px-3 py-2.5 text-zinc-700 text-xs">
+                    <td className="px-3 py-2.5 text-zinc-700 text-xs whitespace-nowrap">
                       {rel?.clientNames.join(", ") || "—"}
                     </td>
-                    <td className="px-3 py-2.5 text-zinc-700 text-xs">
+                    <td className="px-3 py-2.5 text-zinc-700 text-xs whitespace-nowrap">
                       {rel?.personNames.join(", ") || "—"}
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="px-3 py-2.5 text-zinc-700 text-xs whitespace-nowrap">
+                      {rel?.attendeeNames.join(", ") || "—"}
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
                       <StatusBadge status={meeting.meeting_status} />
                     </td>
                     <td className="px-3 py-2.5 text-zinc-500 text-xs">
