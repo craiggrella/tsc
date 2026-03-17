@@ -158,6 +158,7 @@ export function CallLogClient({
   // Phone/email sub-records for the currently selected caller
   const [callerPhones, setCallerPhones] = useState<PhoneRecord[]>([]);
   const [callerEmails, setCallerEmails] = useState<EmailRecord[]>([]);
+  const [newPhoneDesignation, setNewPhoneDesignation] = useState("Cell");
 
 
   // Filters — default to "open" (everything except completed)
@@ -428,8 +429,8 @@ export function CallLogClient({
         client_id: form.client_id,
         call_status: form.call_status,
         priority: form.priority,
-        preferred_phone: form.preferred_phone,
-        phone_custom: form.preferred_phone === "custom" ? form.phone_custom : null,
+        preferred_phone: form.preferred_phone === "new" ? null : form.preferred_phone,
+        phone_custom: form.preferred_phone === "new" ? form.phone_custom : null,
         quick_connect: false,
         log_time: form.log_time || null,
         due_date: form.due_date || null,
@@ -440,6 +441,7 @@ export function CallLogClient({
       const selectQuery =
         "*, contact:people!contact_id(id, full_name), client:clients!client_id(id, full_name)";
 
+      let savedCallId: string | null = editingId;
       if (editingId) {
         const { data, error } = await supabase
           .from("calls")
@@ -461,21 +463,25 @@ export function CallLogClient({
           .single();
         if (error) { console.error("Insert call error:", error); return; }
         if (data) {
+          savedCallId = data.id;
           setCalls((prev) => [data as CallRow, ...prev]);
         }
       }
-      // Write custom phone back as a new contact_phones record
-      if (form.preferred_phone === "custom" && form.phone_custom) {
+      // Create new phone on the contact and link it to this call
+      if (form.preferred_phone === "new" && form.phone_custom && savedCallId) {
         const entityType = form.contact_type === "client" ? "client" : "person";
         const entityId = form.contact_type === "client" ? form.client_id : form.contact_id;
         if (entityId) {
-          await supabase.from("contact_phones").insert({
+          const { data: newPhone } = await supabase.from("contact_phones").insert({
             entity_type: entityType,
             entity_id: entityId,
-            designation: "Other",
+            designation: newPhoneDesignation,
             number: form.phone_custom,
-            is_primary: false,
-          });
+            is_primary: callerPhones.length === 0,
+          }).select("id").single();
+          if (newPhone) {
+            await supabase.from("calls").update({ preferred_phone: newPhone.id, phone_custom: null }).eq("id", savedCallId);
+          }
         }
       }
 
@@ -920,7 +926,7 @@ export function CallLogClient({
             </div>
           )}
 
-          {/* Preferred phone method — shows when caller has phones */}
+          {/* Preferred phone — shows when a contact/client is selected */}
           {(form.contact_id || (form.contact_type === "client" && form.client_id)) && (
             <Field label="Preferred Phone">
               <div className="space-y-1">
@@ -939,7 +945,7 @@ export function CallLogClient({
                       name="phone"
                       checked={form.preferred_phone === p.id}
                       onChange={() =>
-                        setForm({ ...form, preferred_phone: p.id })
+                        setForm({ ...form, preferred_phone: p.id, phone_custom: null })
                       }
                       className="accent-black"
                     />
@@ -953,40 +959,48 @@ export function CallLogClient({
                 ))}
                 {callerPhones.length === 0 && (
                   <p className="text-xs text-zinc-400">
-                    No phone numbers on file for this contact.
+                    No phone numbers on file.
                   </p>
                 )}
-                <label
-                  className={cn(
-                    "flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm cursor-pointer transition-colors",
-                    form.preferred_phone === "custom"
-                      ? "border-black bg-zinc-50"
-                      : "border-zinc-200 hover:border-zinc-300"
-                  )}
-                >
-                  <input
-                    type="radio"
-                    name="phone"
-                    checked={form.preferred_phone === "custom"}
-                    onChange={() =>
-                      setForm({ ...form, preferred_phone: "custom" })
-                    }
-                    className="accent-black"
-                  />
-                  <span className="text-xs font-medium text-zinc-500 w-16">
-                    Custom
-                  </span>
-                  {form.preferred_phone === "custom" && (
-                    <input
-                      value={form.phone_custom || ""}
-                      onChange={(e) =>
-                        setForm({ ...form, phone_custom: e.target.value })
-                      }
-                      placeholder="Enter number..."
-                      className="flex-1 bg-transparent text-xs outline-none placeholder:text-zinc-400"
-                    />
-                  )}
-                </label>
+                {/* Add new phone inline */}
+                {form.preferred_phone === "new" ? (
+                  <div className="rounded-md border border-black bg-zinc-50 px-3 py-2 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="phone"
+                        checked
+                        readOnly
+                        className="accent-black"
+                      />
+                      <select
+                        value={newPhoneDesignation}
+                        onChange={(e) => setNewPhoneDesignation(e.target.value)}
+                        className="rounded border border-zinc-200 bg-white px-2 py-1 text-xs outline-none"
+                      >
+                        {["Cell", "Office", "Home", "Assistant", "Fax", "Other"].map((d) => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                      <input
+                        value={form.phone_custom || ""}
+                        onChange={(e) => setForm({ ...form, phone_custom: e.target.value })}
+                        placeholder="Phone number"
+                        className="flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-xs outline-none"
+                        autoFocus
+                      />
+                    </div>
+                    <p className="text-[10px] text-zinc-400">This number will be saved to the contact record.</p>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, preferred_phone: "new", phone_custom: null })}
+                    className="inline-flex items-center gap-1 px-1 py-1 text-xs text-zinc-400 hover:text-black transition-colors"
+                  >
+                    + Add Phone
+                  </button>
+                )}
               </div>
             </Field>
           )}
