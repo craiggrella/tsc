@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Plus, Search, Users } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -47,8 +47,7 @@ interface ClientRow {
 }
 
 interface ClientsClientProps {
-  initialClients: ClientRow[];
-  companies: CompanyData[];
+  userId: string;
 }
 
 const emptyForm = {
@@ -60,12 +59,11 @@ const emptyForm = {
   notes: null as string | null,
 };
 
-export function ClientsClient({
-  initialClients,
-  companies,
-}: ClientsClientProps) {
+export function ClientsClient({ userId }: ClientsClientProps) {
   const supabase = createClient();
-  const [clients, setClients] = useState<ClientRow[]>(initialClients);
+  const [loading, setLoading] = useState(true);
+  const [clients, setClients] = useState<ClientRow[]>([]);
+  const [companies, setCompanies] = useState<CompanyData[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -100,6 +98,22 @@ export function ClientsClient({
   const [origAddressIds, setOrigAddressIds] = useState<Set<string>>(new Set());
   const [socials, setSocials] = useState<SocialRecord[]>([]);
   const [origSocialIds, setOrigSocialIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    async function load() {
+      const [{ data: clientsData }, { data: companiesData }] = await Promise.all([
+        supabase
+          .from("clients")
+          .select("*, company:companies!company_id(id, name)")
+          .order("full_name"),
+        supabase.from("companies").select("id, name").order("name"),
+      ]);
+      setClients(clientsData || []);
+      setCompanies(companiesData || []);
+      setLoading(false);
+    }
+    load();
+  }, []);
 
   const companyOptions: RelationOption[] = useMemo(
     () => companies.map((c) => ({ id: c.id, label: c.name })),
@@ -306,6 +320,8 @@ export function ClientsClient({
         ]
       : []),
   ];
+
+  if (loading) return <div className="flex items-center justify-center py-20"><p className="text-sm text-zinc-400">Loading...</p></div>;
 
   return (
     <div>

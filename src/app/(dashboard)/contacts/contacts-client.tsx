@@ -56,13 +56,7 @@ interface ContactRow {
 }
 
 interface ContactsClientProps {
-  initialContacts: ContactRow[];
-  companies: CompanyData[];
-  totalCount: number;
-  currentPage: number;
-  pageSize: number;
-  initialSearch: string;
-  initialTypeFilter: string;
+  userId: string;
   openContactId?: string | null;
 }
 
@@ -101,25 +95,22 @@ const emptyForm = {
 };
 
 export function ContactsClient({
-  initialContacts,
-  companies,
-  totalCount,
-  currentPage,
-  pageSize,
-  initialSearch,
-  initialTypeFilter,
+  userId,
   openContactId,
 }: ContactsClientProps) {
   const supabase = createClient();
   const router = useRouter();
-  const [contacts, setContacts] = useState<ContactRow[]>(initialContacts);
+  const [loading, setLoading] = useState(true);
+  const [contacts, setContacts] = useState<ContactRow[]>([]);
+  const [companies, setCompanies] = useState<CompanyData[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [search, setSearch] = useState(initialSearch);
+  const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("info");
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
   const hasAutoOpened = useRef(false);
@@ -149,6 +140,24 @@ export function ContactsClient({
   const [origAddressIds, setOrigAddressIds] = useState<Set<string>>(new Set());
   const [socials, setSocials] = useState<SocialRecord[]>([]);
   const [origSocialIds, setOrigSocialIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    async function load() {
+      const [{ data: contactsData, count }, { data: companiesData }] = await Promise.all([
+        supabase
+          .from("people")
+          .select("*, company:companies!company_id(id, name)", { count: "exact" })
+          .order("full_name")
+          .range(0, 49),
+        supabase.from("companies").select("id, name").order("name"),
+      ]);
+      setContacts(contactsData || []);
+      setCompanies(companiesData || []);
+      setTotalCount(count || 0);
+      setLoading(false);
+    }
+    load();
+  }, []);
 
   // Fetch primary/first phone and email for contacts in the table
   useEffect(() => {
@@ -205,7 +214,15 @@ export function ContactsClient({
     clearTimeout(searchTimeout.current);
     if (!value.trim()) {
       // Reset to initial data
-      setContacts(initialContacts);
+      supabase
+        .from("people")
+        .select("*, company:companies!company_id(id, name)", { count: "exact" })
+        .order("full_name")
+        .range(0, 49)
+        .then(({ data, count }) => {
+          if (data) setContacts(data as ContactRow[]);
+          setTotalCount(count || 0);
+        });
       return;
     }
     searchTimeout.current = setTimeout(async () => {
@@ -425,6 +442,8 @@ export function ContactsClient({
         ]
       : []),
   ];
+
+  if (loading) return <div className="flex items-center justify-center py-20"><p className="text-sm text-zinc-400">Loading...</p></div>;
 
   return (
     <div>

@@ -87,9 +87,6 @@ interface CallRow {
 }
 
 interface CallLogClientProps {
-  initialCalls: CallRow[];
-  clients: ClientData[];
-  profiles: ProfileData[];
   userId: string;
 }
 
@@ -135,16 +132,14 @@ const emptyCall = {
 
 // ─── Component ──────────────────────────────────────
 
-export function CallLogClient({
-  initialCalls,
-  clients,
-  profiles,
-  userId,
-}: CallLogClientProps) {
+export function CallLogClient({ userId }: CallLogClientProps) {
   const supabase = createClient();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [calls, setCalls] = useState<CallRow[]>(initialCalls);
+  const [loading, setLoading] = useState(true);
+  const [calls, setCalls] = useState<CallRow[]>([]);
+  const [clients, setClients] = useState<ClientData[]>([]);
+  const [profiles, setProfiles] = useState<ProfileData[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<typeof emptyCall>({ ...emptyCall, user_id: userId, log_time: nowLocal() });
@@ -171,6 +166,25 @@ export function CallLogClient({
   // Sorting
   const [sortField, setSortField] = useState<SortField>("due_date");
   const [sortAsc, setSortAsc] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      const [{ data: callsData }, { data: clientsData }, { data: profilesData }] = await Promise.all([
+        supabase
+          .from("calls")
+          .select("*, contact:people!contact_id(id, full_name), client:clients!client_id(id, full_name)")
+          .order("due_date", { ascending: true, nullsFirst: false })
+          .limit(200),
+        supabase.from("clients").select("id, full_name").order("full_name"),
+        supabase.from("profiles").select("id, full_name, role").order("full_name"),
+      ]);
+      setCalls(callsData || []);
+      setClients(clientsData || []);
+      setProfiles(profilesData || []);
+      setLoading(false);
+    }
+    load();
+  }, []);
 
   // Auto-open new call or specific call from URL params
   useEffect(() => {
@@ -600,6 +614,8 @@ export function CallLogClient({
   }
 
   // ─── Render ─────────────────────────────────────
+
+  if (loading) return <div className="flex items-center justify-center py-20"><p className="text-sm text-zinc-400">Loading...</p></div>;
 
   return (
     <div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Plus, Search, Clapperboard, Filter, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -36,9 +36,7 @@ interface ProjectRow {
 }
 
 interface ProjectsClientProps {
-  initialProjects: ProjectRow[];
-  companies: CompanyData[];
-  people: PersonData[];
+  userId: string;
 }
 
 const STATUSES: { value: ProjectStatus; label: string }[] = [
@@ -66,13 +64,11 @@ const emptyForm = {
   person_ids: [] as string[],
 };
 
-export function ProjectsClient({
-  initialProjects,
-  companies,
-  people,
-}: ProjectsClientProps) {
+export function ProjectsClient({ userId }: ProjectsClientProps) {
   const supabase = createClient();
-  const [projects, setProjects] = useState<ProjectRow[]>(initialProjects);
+  const [loading, setLoading] = useState(true);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [people, setPeople] = useState<PersonData[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -84,7 +80,7 @@ export function ProjectsClient({
   const [activeTab, setActiveTab] = useState("info");
   const [projectCompanies, setProjectCompanies] = useState<ProjectCompanyRow[]>([]);
   const [origCompanyIds, setOrigCompanyIds] = useState<Set<string>>(new Set());
-  const [companyList, setCompanyList] = useState(companies);
+  const [companyList, setCompanyList] = useState<CompanyData[]>([]);
 
   // Display caches
   const [displayNetworks, setDisplayNetworks] = useState<string[]>([]);
@@ -108,6 +104,21 @@ export function ProjectsClient({
   const [tableCache, setTableCache] = useState<
     Record<string, { networks: string[]; studios: string[]; prodCos: string[] }>
   >({});
+
+  useEffect(() => {
+    async function load() {
+      const [{ data: projectsData }, { data: companiesData }, { data: peopleData }] = await Promise.all([
+        supabase.from("projects").select("*").order("name"),
+        supabase.from("companies").select("id, name").order("name"),
+        supabase.from("people").select("id, full_name, title, exec_level").order("full_name"),
+      ]);
+      setProjects(projectsData || []);
+      setCompanyList(companiesData || []);
+      setPeople(peopleData || []);
+      setLoading(false);
+    }
+    load();
+  }, []);
 
   const companyOptions: RelationOption[] = useMemo(
     () => companyList.map((c) => ({ id: c.id, label: c.name })),
@@ -306,6 +317,8 @@ export function ProjectsClient({
         ]
       : []),
   ];
+
+  if (loading) return <div className="flex items-center justify-center py-20"><p className="text-sm text-zinc-400">Loading...</p></div>;
 
   return (
     <div>

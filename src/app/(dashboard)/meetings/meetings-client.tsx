@@ -30,11 +30,7 @@ interface MeetingRow {
 }
 
 interface MeetingsClientProps {
-  initialMeetings: MeetingRow[];
-  clients: { id: string; full_name: string }[];
-  people: { id: string; full_name: string }[];
-  projects: { id: string; name: string }[];
-  profiles: { id: string; full_name: string; role: string }[];
+  userId: string;
 }
 
 const MEETING_STATUSES: { value: MeetingStatus; label: string }[] = [
@@ -67,18 +63,16 @@ const emptyForm = {
   attendee_ids: [] as string[],
 };
 
-export function MeetingsClient({
-  initialMeetings,
-  clients,
-  people,
-  projects,
-  profiles,
-}: MeetingsClientProps) {
+export function MeetingsClient({ userId }: MeetingsClientProps) {
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
   const hasAutoOpened = useRef(false);
-  const [meetings, setMeetings] = useState<MeetingRow[]>(initialMeetings);
+  const [loading, setLoading] = useState(true);
+  const [meetings, setMeetings] = useState<MeetingRow[]>([]);
+  const [clients, setClients] = useState<{ id: string; full_name: string }[]>([]);
+  const [people, setPeople] = useState<{ id: string; full_name: string }[]>([]);
+  const [profiles, setProfiles] = useState<{ id: string; full_name: string; role: string }[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -105,6 +99,25 @@ export function MeetingsClient({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  useEffect(() => {
+    async function load() {
+      const [{ data: meetingsData }, { data: clientsData }, { data: peopleData }, { data: projectsData }, { data: profilesData }] = await Promise.all([
+        supabase.from("meetings").select("*").order("meeting_at", { ascending: true, nullsFirst: false }),
+        supabase.from("clients").select("id, full_name").order("full_name"),
+        supabase.from("people").select("id, full_name").order("full_name"),
+        supabase.from("projects").select("id, name").order("name"),
+        supabase.from("profiles").select("id, full_name, role").order("full_name"),
+      ]);
+      setMeetings(meetingsData || []);
+      setClients(clientsData || []);
+      setPeople(peopleData || []);
+      setProjectList(projectsData || []);
+      setProfiles(profilesData || []);
+      setLoading(false);
+    }
+    load();
+  }, []);
+
   const clientOptions: RelationOption[] = useMemo(
     () => clients.map((c) => ({ id: c.id, label: c.full_name })),
     [clients]
@@ -113,7 +126,7 @@ export function MeetingsClient({
     () => people.map((p) => ({ id: p.id, label: p.full_name })),
     [people]
   );
-  const [projectList, setProjectList] = useState(projects);
+  const [projectList, setProjectList] = useState<{ id: string; name: string }[]>([]);
   const projectOptions: RelationOption[] = useMemo(
     () => projectList.map((p) => ({ id: p.id, label: p.name })),
     [projectList]
@@ -356,6 +369,8 @@ export function MeetingsClient({
       setDeleting(false);
     }
   }, [editingId, supabase]);
+
+  if (loading) return <div className="flex items-center justify-center py-20"><p className="text-sm text-zinc-400">Loading...</p></div>;
 
   return (
     <div>

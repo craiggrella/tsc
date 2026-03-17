@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { Plus, Send, Filter } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -30,10 +30,7 @@ interface SubmissionRow {
 }
 
 interface SubmissionsClientProps {
-  initialSubmissions: SubmissionRow[];
-  clients: { id: string; full_name: string }[];
-  people: { id: string; full_name: string }[];
-  projects: { id: string; name: string }[];
+  userId: string;
 }
 
 const STATUSES: { value: SubmissionStatus; label: string }[] = [
@@ -71,14 +68,12 @@ const emptyForm = {
   project_ids: [] as string[],
 };
 
-export function SubmissionsClient({
-  initialSubmissions,
-  clients,
-  people,
-  projects,
-}: SubmissionsClientProps) {
+export function SubmissionsClient({ userId }: SubmissionsClientProps) {
   const supabase = createClient();
-  const [submissions, setSubmissions] = useState<SubmissionRow[]>(initialSubmissions);
+  const [loading, setLoading] = useState(true);
+  const [submissions, setSubmissions] = useState<SubmissionRow[]>([]);
+  const [clients, setClients] = useState<{ id: string; full_name: string }[]>([]);
+  const [people, setPeople] = useState<{ id: string; full_name: string }[]>([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -90,6 +85,23 @@ export function SubmissionsClient({
   const [relationCache, setRelationCache] = useState<
     Record<string, { clientNames: string[]; personNames: string[] }>
   >({});
+
+  useEffect(() => {
+    async function load() {
+      const [{ data: subsData }, { data: clientsData }, { data: peopleData }, { data: projectsData }] = await Promise.all([
+        supabase.from("submissions").select("*").order("submission_date", { ascending: false, nullsFirst: false }),
+        supabase.from("clients").select("id, full_name").order("full_name"),
+        supabase.from("people").select("id, full_name").order("full_name"),
+        supabase.from("projects").select("id, name").order("name"),
+      ]);
+      setSubmissions(subsData || []);
+      setClients(clientsData || []);
+      setPeople(peopleData || []);
+      setProjectList(projectsData || []);
+      setLoading(false);
+    }
+    load();
+  }, []);
 
   const clientOptions: RelationOption[] = useMemo(
     () => clients.map((c) => ({ id: c.id, label: c.full_name })),
@@ -104,7 +116,7 @@ export function SubmissionsClient({
     () => reasonList.map((r) => ({ id: r, label: r })),
     [reasonList]
   );
-  const [projectList, setProjectList] = useState(projects);
+  const [projectList, setProjectList] = useState<{ id: string; name: string }[]>([]);
   const projectOptions: RelationOption[] = useMemo(
     () => projectList.map((p) => ({ id: p.id, label: p.name })),
     [projectList]
@@ -302,6 +314,8 @@ export function SubmissionsClient({
     setReasonList((prev) => [...prev, name]);
     return { id: name, label: name };
   }, []);
+
+  if (loading) return <div className="flex items-center justify-center py-20"><p className="text-sm text-zinc-400">Loading...</p></div>;
 
   return (
     <div>
