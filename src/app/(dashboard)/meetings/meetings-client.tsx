@@ -34,6 +34,7 @@ interface MeetingsClientProps {
   clients: { id: string; full_name: string }[];
   people: { id: string; full_name: string }[];
   projects: { id: string; name: string }[];
+  profiles: { id: string; full_name: string; role: string }[];
 }
 
 const MEETING_STATUSES: { value: MeetingStatus; label: string }[] = [
@@ -63,6 +64,7 @@ const emptyForm = {
   client_ids: [] as string[],
   person_ids: [] as string[],
   project_ids: [] as string[],
+  attendee_ids: [] as string[],
 };
 
 export function MeetingsClient({
@@ -70,6 +72,7 @@ export function MeetingsClient({
   clients,
   people,
   projects,
+  profiles,
 }: MeetingsClientProps) {
   const supabase = createClient();
   const router = useRouter();
@@ -113,6 +116,10 @@ export function MeetingsClient({
   const projectOptions: RelationOption[] = useMemo(
     () => projectList.map((p) => ({ id: p.id, label: p.name })),
     [projectList]
+  );
+  const profileOptions: RelationOption[] = useMemo(
+    () => profiles.map((p) => ({ id: p.id, label: p.full_name, sublabel: p.role })),
+    [profiles]
   );
 
   const createProject = useCallback(async (name: string): Promise<RelationOption | null> => {
@@ -187,7 +194,7 @@ export function MeetingsClient({
     setEditingId(meeting.id);
 
     // Load join table IDs
-    const [{ data: mc }, { data: mp }, { data: mpr }] = await Promise.all([
+    const [{ data: mc }, { data: mp }, { data: mpr }, { data: ma }] = await Promise.all([
       supabase
         .from("meeting_clients")
         .select("client_id")
@@ -199,6 +206,10 @@ export function MeetingsClient({
       supabase
         .from("meeting_projects")
         .select("project_id")
+        .eq("meeting_id", meeting.id),
+      supabase
+        .from("meeting_attendees")
+        .select("profile_id")
         .eq("meeting_id", meeting.id),
     ]);
 
@@ -212,6 +223,7 @@ export function MeetingsClient({
       client_ids: (mc || []).map((r) => r.client_id),
       person_ids: (mp || []).map((r) => r.person_id),
       project_ids: (mpr || []).map((r) => r.project_id),
+      attendee_ids: (ma || []).map((r) => r.profile_id),
     });
     setPanelOpen(true);
   }
@@ -252,6 +264,7 @@ export function MeetingsClient({
           supabase.from("meeting_clients").delete().eq("meeting_id", meetingId),
           supabase.from("meeting_people").delete().eq("meeting_id", meetingId),
           supabase.from("meeting_projects").delete().eq("meeting_id", meetingId),
+          supabase.from("meeting_attendees").delete().eq("meeting_id", meetingId),
         ]);
         await Promise.all([
           form.client_ids.length > 0
@@ -275,6 +288,14 @@ export function MeetingsClient({
                 form.project_ids.map((id) => ({
                   meeting_id: meetingId!,
                   project_id: id,
+                }))
+              )
+            : Promise.resolve(),
+          form.attendee_ids.length > 0
+            ? supabase.from("meeting_attendees").insert(
+                form.attendee_ids.map((id) => ({
+                  meeting_id: meetingId!,
+                  profile_id: id,
                 }))
               )
             : Promise.resolve(),
@@ -484,6 +505,14 @@ export function MeetingsClient({
               onChange={(ids) => setForm({ ...form, person_ids: ids })}
               options={personOptions}
               placeholder="Search contacts..."
+            />
+          </Field>
+          <Field label="Our Team">
+            <MultiRelationPicker
+              value={form.attendee_ids}
+              onChange={(ids) => setForm({ ...form, attendee_ids: ids })}
+              options={profileOptions}
+              placeholder="Select team members..."
             />
           </Field>
           <Field label="Projects">
