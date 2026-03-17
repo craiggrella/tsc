@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { Plus, Search, Users } from "lucide-react";
+import { Plus, Search, Users, Phone } from "lucide-react";
+import { StatusBadge } from "@/components/shared/status-badge";
+import { formatPhone } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import {
   RelationPicker,
@@ -24,8 +26,14 @@ interface ClientRow {
   full_name: string;
   first_name: string | null;
   last_name: string | null;
-  email: string | null;
-  phone: string | null;
+  phone_cell: string | null;
+  phone_office: string | null;
+  phone_home: string | null;
+  phone_other: string | null;
+  preferred_phone: string | null;
+  email_office: string | null;
+  email_home: string | null;
+  preferred_email: string | null;
   company_id: string | null;
   staff_level: string | null;
   notes: string | null;
@@ -42,8 +50,14 @@ const emptyForm = {
   full_name: "",
   first_name: null as string | null,
   last_name: null as string | null,
-  email: null as string | null,
-  phone: null as string | null,
+  phone_cell: null as string | null,
+  phone_office: null as string | null,
+  phone_home: null as string | null,
+  phone_other: null as string | null,
+  preferred_phone: null as string | null,
+  email_office: null as string | null,
+  email_home: null as string | null,
+  preferred_email: null as string | null,
   company_id: null as string | null,
   staff_level: null as string | null,
   notes: null as string | null,
@@ -73,6 +87,11 @@ export function ClientsClient({
   const [relatedMaterials, setRelatedMaterials] = useState<
     { id: string; title: string; status: string; format: string | null; genre: string | null }[]
   >([]);
+  const [relatedCalls, setRelatedCalls] = useState<
+    { id: string; about: string; call_status: string; due_date: string | null }[]
+  >([]);
+  const [callsHasMore, setCallsHasMore] = useState(false);
+  const [callsLoading, setCallsLoading] = useState(false);
 
   const companyOptions: RelationOption[] = useMemo(
     () => companies.map((c) => ({ id: c.id, label: c.name })),
@@ -85,7 +104,7 @@ export function ClientsClient({
     return clients.filter(
       (c) =>
         c.full_name.toLowerCase().includes(q) ||
-        c.email?.toLowerCase().includes(q) ||
+        c.email_office?.toLowerCase().includes(q) ||
         c.company?.name.toLowerCase().includes(q)
     );
   }, [clients, search]);
@@ -103,17 +122,25 @@ export function ClientsClient({
       full_name: client.full_name,
       first_name: client.first_name,
       last_name: client.last_name,
-      email: client.email,
-      phone: client.phone,
+      phone_cell: client.phone_cell,
+      phone_office: client.phone_office,
+      phone_home: client.phone_home,
+      phone_other: client.phone_other,
+      preferred_phone: client.preferred_phone,
+      email_office: client.email_office,
+      email_home: client.email_home,
+      preferred_email: client.preferred_email,
       company_id: client.company_id,
       staff_level: client.staff_level,
       notes: client.notes,
     });
     setActiveTab("info");
+    setRelatedCalls([]);
+    setCallsHasMore(false);
     setPanelOpen(true);
 
     // Load related data
-    const [{ data: meetings }, { data: submissions }, { data: materials }] = await Promise.all([
+    const [{ data: meetings }, { data: submissions }, { data: materials }, { data: calls }] = await Promise.all([
       supabase
         .from("meeting_clients")
         .select("meeting:meetings(id, title, meeting_status, meeting_at)")
@@ -127,6 +154,12 @@ export function ClientsClient({
         .select("id, title, status, format, genre")
         .eq("client_id", client.id)
         .order("updated_at", { ascending: false }),
+      supabase
+        .from("calls")
+        .select("id, about, call_status, due_date")
+        .eq("client_id", client.id)
+        .order("due_date", { ascending: false })
+        .range(0, 20),
     ]);
     setRelatedMeetings(
       (meetings || [])
@@ -139,6 +172,26 @@ export function ClientsClient({
         .filter(Boolean)
     );
     setRelatedMaterials(materials || []);
+    setRelatedCalls(calls || []);
+    setCallsHasMore((calls || []).length > 20);
+  }
+
+  async function loadMoreCalls(clientId: string) {
+    setCallsLoading(true);
+    try {
+      const { data } = await supabase
+        .from("calls")
+        .select("id, about, call_status, due_date")
+        .eq("client_id", clientId)
+        .order("due_date", { ascending: false })
+        .range(relatedCalls.length, relatedCalls.length + 20);
+      if (data) {
+        setRelatedCalls((prev) => [...prev, ...data]);
+        setCallsHasMore(data.length > 20);
+      }
+    } finally {
+      setCallsLoading(false);
+    }
   }
 
   const handleSave = useCallback(async () => {
@@ -189,6 +242,7 @@ export function ClientsClient({
     { id: "info", label: "Info" },
     ...(editingId
       ? [
+          { id: "calls", label: "Calls" },
           { id: "materials", label: "Materials" },
           { id: "meetings", label: "Meetings" },
           { id: "submissions", label: "Submissions" },
@@ -251,8 +305,8 @@ export function ClientsClient({
                   className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                 >
                   <td className="px-3 py-2.5 font-medium text-black">{client.full_name}</td>
-                  <td className="px-3 py-2.5 text-zinc-500">{client.email || "—"}</td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs font-mono">{client.phone || "—"}</td>
+                  <td className="px-3 py-2.5 text-zinc-500">{client.email_office || "—"}</td>
+                  <td className="px-3 py-2.5 text-zinc-500 text-xs font-mono">{formatPhone(client.phone_office) || "—"}</td>
                   <td className="px-3 py-2.5 text-zinc-700">{client.company?.name || "—"}</td>
                   <td className="px-3 py-2.5 text-zinc-500">{client.staff_level || "—"}</td>
                 </tr>
@@ -320,11 +374,27 @@ export function ClientsClient({
               </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Email">
-                <Input type="email" value={form.email || ""} onChange={(e) => setForm({ ...form, email: e.target.value || null })} />
+              <Field label="Office Email">
+                <Input type="email" value={form.email_office || ""} onChange={(e) => setForm({ ...form, email_office: e.target.value || null })} />
               </Field>
-              <Field label="Phone">
-                <Input value={form.phone || ""} onChange={(e) => setForm({ ...form, phone: e.target.value || null })} />
+              <Field label="Home Email">
+                <Input type="email" value={form.email_home || ""} onChange={(e) => setForm({ ...form, email_home: e.target.value || null })} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Cell Phone">
+                <Input value={form.phone_cell || ""} onChange={(e) => setForm({ ...form, phone_cell: e.target.value || null })} />
+              </Field>
+              <Field label="Office Phone">
+                <Input value={form.phone_office || ""} onChange={(e) => setForm({ ...form, phone_office: e.target.value || null })} />
+              </Field>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Home Phone">
+                <Input value={form.phone_home || ""} onChange={(e) => setForm({ ...form, phone_home: e.target.value || null })} />
+              </Field>
+              <Field label="Other Phone">
+                <Input value={form.phone_other || ""} onChange={(e) => setForm({ ...form, phone_other: e.target.value || null })} />
               </Field>
             </div>
             <Field label="Company">
@@ -336,6 +406,37 @@ export function ClientsClient({
             <Field label="Notes">
               <Textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value || null })} placeholder="Notes..." />
             </Field>
+          </div>
+        )}
+
+        {activeTab === "calls" && (
+          <div className="space-y-2">
+            {relatedCalls.length === 0 ? (
+              <p className="text-sm text-zinc-400 py-4 text-center">No calls yet.</p>
+            ) : (
+              <>
+                {relatedCalls.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium text-black">{c.about || "—"}</p>
+                      <p className="text-xs text-zinc-500">
+                        {c.due_date ? new Date(c.due_date).toLocaleDateString() : "No date"}
+                      </p>
+                    </div>
+                    <StatusBadge status={c.call_status} />
+                  </div>
+                ))}
+                {callsHasMore && editingId && (
+                  <button
+                    onClick={() => loadMoreCalls(editingId)}
+                    disabled={callsLoading}
+                    className="w-full py-2 text-xs text-zinc-500 hover:text-black transition-colors disabled:opacity-50"
+                  >
+                    {callsLoading ? "Loading..." : "Load more calls"}
+                  </button>
+                )}
+              </>
+            )}
           </div>
         )}
 

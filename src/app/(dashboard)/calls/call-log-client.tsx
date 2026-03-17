@@ -45,6 +45,14 @@ interface ContactData {
 interface ClientData {
   id: string;
   full_name: string;
+  phone_cell: string | null;
+  phone_office: string | null;
+  phone_home: string | null;
+  phone_other: string | null;
+  preferred_phone: string | null;
+  email_office: string | null;
+  email_home: string | null;
+  preferred_email: string | null;
 }
 
 interface ProfileData {
@@ -120,6 +128,7 @@ const emptyCall = {
   about: "",
   contact_id: null as string | null,
   client_id: null as string | null,
+  contact_type: null as "person" | "client" | null,
   user_id: null as string | null,
   call_status: "to_call" as CallStatus,
   priority: null as "high" | "medium" | "low" | null,
@@ -149,8 +158,9 @@ export function CallLogClient({
   const [deleting, setDeleting] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkActing, setBulkActing] = useState(false);
-  // Cache of people we've fetched (for selected contact details)
+  // Cache of people/clients we've fetched (for selected contact details)
   const [peopleCache, setPeopleCache] = useState<Map<string, PersonOption>>(new Map());
+  const [clientsCache, setClientsCache] = useState<Map<string, ClientData>>(new Map());
 
   // Filters
   const [statusFilter, setStatusFilter] = useState<CallStatus | "">("");
@@ -195,25 +205,45 @@ export function CallLogClient({
     [profiles]
   );
 
-  // Search people from DB
+  // Search people AND clients from DB
   const searchPeople = useCallback(
     async (query: string): Promise<RelationOption[]> => {
-      const { data } = await supabase
-        .from("people")
-        .select("id, full_name, title, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email")
-        .ilike("full_name", `%${query}%`)
-        .order("full_name")
-        .limit(20);
+      const [{ data: people }, { data: clientResults }] = await Promise.all([
+        supabase
+          .from("people")
+          .select("id, full_name, title, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email")
+          .ilike("full_name", `%${query}%`)
+          .order("full_name")
+          .limit(15),
+        supabase
+          .from("clients")
+          .select("id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email")
+          .ilike("full_name", `%${query}%`)
+          .order("full_name")
+          .limit(5),
+      ]);
 
-      if (data) {
+      const results: RelationOption[] = [];
+
+      if (people) {
         setPeopleCache((prev) => {
           const next = new Map(prev);
-          data.forEach((p) => next.set(p.id, p as PersonOption));
+          people.forEach((p) => next.set(p.id, p as PersonOption));
           return next;
         });
-        return data.map((p) => ({ id: p.id, label: p.full_name, sublabel: p.title || undefined }));
+        results.push(...people.map((p) => ({ id: p.id, label: p.full_name, sublabel: p.title || undefined })));
       }
-      return [];
+
+      if (clientResults) {
+        setClientsCache((prev) => {
+          const next = new Map(prev);
+          clientResults.forEach((c) => next.set(c.id, c as ClientData));
+          return next;
+        });
+        results.push(...clientResults.map((c) => ({ id: c.id, label: c.full_name, tag: "Client" })));
+      }
+
+      return results;
     },
     [supabase]
   );
@@ -269,33 +299,50 @@ export function CallLogClient({
     }
   }, [form.contact_id, peopleCache, supabase]);
 
-  // Get selected contact data from cache
+  // Fetch client details when a client is selected as caller
+  useEffect(() => {
+    if (form.contact_type === "client" && form.client_id && !clientsCache.has(form.client_id)) {
+      supabase
+        .from("clients")
+        .select("id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email")
+        .eq("id", form.client_id)
+        .single()
+        .then(({ data }) => {
+          if (data) {
+            setClientsCache((prev) => new Map(prev).set(data.id, data as ClientData));
+          }
+        });
+    }
+  }, [form.contact_type, form.client_id, clientsCache, supabase]);
+
+  // Get selected contact/client data from cache — unified phone/email source
   const selectedContact = form.contact_id ? peopleCache.get(form.contact_id) || null : null;
-  const selectedContactLabel = selectedContact?.full_name || (form.contact_id ? undefined : undefined);
+  const selectedClient = form.contact_type === "client" && form.client_id ? clientsCache.get(form.client_id) || null : null;
+  const callerRecord = form.contact_type === "client" ? selectedClient : selectedContact;
 
   const contactPhones = useMemo(() => {
-    if (!selectedContact) return [];
+    if (!callerRecord) return [];
     const phones: { key: string; label: string; number: string }[] = [];
-    if (selectedContact.phone_cell)
-      phones.push({ key: "cell", label: "Cell", number: selectedContact.phone_cell });
-    if (selectedContact.phone_office)
-      phones.push({ key: "office", label: "Office", number: selectedContact.phone_office });
-    if (selectedContact.phone_home)
-      phones.push({ key: "home", label: "Home", number: selectedContact.phone_home });
-    if (selectedContact.phone_other)
-      phones.push({ key: "other", label: "Other", number: selectedContact.phone_other });
+    if (callerRecord.phone_cell)
+      phones.push({ key: "cell", label: "Cell", number: callerRecord.phone_cell });
+    if (callerRecord.phone_office)
+      phones.push({ key: "office", label: "Office", number: callerRecord.phone_office });
+    if (callerRecord.phone_home)
+      phones.push({ key: "home", label: "Home", number: callerRecord.phone_home });
+    if (callerRecord.phone_other)
+      phones.push({ key: "other", label: "Other", number: callerRecord.phone_other });
     return phones;
-  }, [selectedContact]);
+  }, [callerRecord]);
 
   const contactEmails = useMemo(() => {
-    if (!selectedContact) return [];
+    if (!callerRecord) return [];
     const emails: { key: string; label: string; address: string }[] = [];
-    if (selectedContact.email_office)
-      emails.push({ key: "office", label: "Office", address: selectedContact.email_office });
-    if (selectedContact.email_home)
-      emails.push({ key: "Home", label: "Home", address: selectedContact.email_home });
+    if (callerRecord.email_office)
+      emails.push({ key: "office", label: "Office", address: callerRecord.email_office });
+    if (callerRecord.email_home)
+      emails.push({ key: "home", label: "Home", address: callerRecord.email_home });
     return emails;
-  }, [selectedContact]);
+  }, [callerRecord]);
 
   // Filtered & sorted calls
   const filteredCalls = useMemo(() => {
@@ -333,10 +380,13 @@ export function CallLogClient({
 
   function openEdit(call: CallRow) {
     setEditingId(call.id);
+    // Detect contact_type: if no contact but has client, it's a client call
+    const contactType = call.contact_id ? "person" as const : call.client_id ? "client" as const : null;
     setForm({
       about: call.about,
       contact_id: call.contact_id,
       client_id: call.client_id,
+      contact_type: contactType,
       user_id: call.user_id,
       call_status: call.call_status,
       priority: call.priority,
@@ -377,7 +427,7 @@ export function CallLogClient({
       };
 
       const selectQuery =
-        "*, contact:people!contact_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email), client:clients!client_id(id, full_name)";
+        "*, contact:people!contact_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email), client:clients!client_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email)";
 
       if (editingId) {
         const { data, error } = await supabase
@@ -403,6 +453,27 @@ export function CallLogClient({
           setCalls((prev) => [data as CallRow, ...prev]);
         }
       }
+      // Write custom phone back to contact/client record
+      if (form.preferred_phone === "custom" && form.phone_custom) {
+        if (form.contact_type === "person" && form.contact_id) {
+          await supabase.from("people").update({ phone_other: form.phone_custom }).eq("id", form.contact_id);
+          setPeopleCache((prev) => {
+            const next = new Map(prev);
+            const existing = next.get(form.contact_id!);
+            if (existing) next.set(form.contact_id!, { ...existing, phone_other: form.phone_custom });
+            return next;
+          });
+        } else if (form.contact_type === "client" && form.client_id) {
+          await supabase.from("clients").update({ phone_other: form.phone_custom }).eq("id", form.client_id);
+          setClientsCache((prev) => {
+            const next = new Map(prev);
+            const existing = next.get(form.client_id!);
+            if (existing) next.set(form.client_id!, { ...existing, phone_other: form.phone_custom });
+            return next;
+          });
+        }
+      }
+
       setPanelOpen(false);
     } finally {
       setSaving(false);
@@ -428,7 +499,7 @@ export function CallLogClient({
       .update({ call_status: newStatus })
       .eq("id", callId)
       .select(
-        "*, contact:people!contact_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email), client:clients!client_id(id, full_name)"
+        "*, contact:people!contact_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email), client:clients!client_id(id, full_name, phone_cell, phone_office, phone_home, phone_other, preferred_phone, email_office, email_home, preferred_email)"
       )
       .single();
     if (data) {
@@ -488,9 +559,11 @@ export function CallLogClient({
 
   function getPhoneDisplay(call: CallRow): string {
     if (call.preferred_phone === "custom" && call.phone_custom) return formatPhone(call.phone_custom);
-    if (call.contact && call.preferred_phone) {
-      const key = `phone_${call.preferred_phone}` as keyof ContactData;
-      return formatPhone(call.contact[key] as string);
+    const record = call.contact || call.client;
+    if (record && call.preferred_phone) {
+      const key = `phone_${call.preferred_phone}` as keyof typeof record;
+      const val = record[key];
+      if (typeof val === "string") return formatPhone(val);
     }
     return "—";
   }
@@ -698,7 +771,10 @@ export function CallLogClient({
                     {call.about || "—"}
                   </td>
                   <td className="px-3 py-2.5 text-zinc-700">
-                    {call.contact?.full_name || "—"}
+                    {call.contact?.full_name || call.client?.full_name || "—"}
+                    {!call.contact_id && call.client_id && (
+                      <span className="ml-1 text-[10px] text-amber-600 font-medium">Client</span>
+                    )}
                   </td>
                   <td className="px-3 py-2.5 text-zinc-700">
                     {call.client?.full_name || "—"}
@@ -774,11 +850,11 @@ export function CallLogClient({
         }
       >
         <div className="space-y-4">
-          {/* Contact (top) */}
+          {/* Contact / Client (unified picker) */}
           <Field label={
             <span className="flex items-center gap-1.5">
               Contact
-              {form.contact_id && selectedContact && (
+              {form.contact_type === "person" && form.contact_id && selectedContact && (
                 <a
                   href={`/contacts?q=${encodeURIComponent(selectedContact.full_name)}`}
                   className="inline-flex items-center gap-0.5 text-[11px] font-normal text-zinc-400 hover:text-black transition-colors"
@@ -790,26 +866,35 @@ export function CallLogClient({
             </span>
           }>
             <RelationPicker
-              value={form.contact_id}
-              onChange={(id) =>
-                setForm({
-                  ...form,
-                  contact_id: id,
-                  preferred_phone: null,
-                  phone_custom: null,
-                })
-              }
+              value={form.contact_type === "client" ? form.client_id : form.contact_id}
+              onChange={(id) => {
+                if (!id) {
+                  setForm({ ...form, contact_id: null, client_id: null, contact_type: null, preferred_phone: null, phone_custom: null });
+                  return;
+                }
+                // Check if this ID is in clientsCache (i.e. it's a client)
+                if (clientsCache.has(id)) {
+                  setForm({ ...form, contact_id: null, client_id: id, contact_type: "client", preferred_phone: null, phone_custom: null });
+                } else {
+                  setForm({ ...form, contact_id: id, client_id: null, contact_type: "person", preferred_phone: null, phone_custom: null });
+                }
+                // Note: Re: Client auto-fill for client calls is handled separately below
+              }}
               options={[]}
               onSearch={searchPeople}
-              selectedLabel={selectedContact?.full_name}
-              placeholder="Search contacts..."
+              selectedLabel={
+                form.contact_type === "client"
+                  ? clientsCache.get(form.client_id || "")?.full_name
+                  : selectedContact?.full_name
+              }
+              placeholder="Search contacts or clients..."
               onAdd={addContact}
               addLabel="Add contact"
             />
           </Field>
 
-          {/* Contact info card — shows when contact is selected */}
-          {selectedContact && (contactPhones.length > 0 || contactEmails.length > 0) && (
+          {/* Contact/Client info card — shows when caller is selected */}
+          {callerRecord && (contactPhones.length > 0 || contactEmails.length > 0) && (
             <div className="rounded-md border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 space-y-1.5">
               <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">
                 Contact Info
@@ -829,8 +914,8 @@ export function CallLogClient({
             </div>
           )}
 
-          {/* Preferred phone method — shows when contact has phones */}
-          {form.contact_id && (
+          {/* Preferred phone method — shows when contact or client has phones */}
+          {(form.contact_id || (form.contact_type === "client" && form.client_id)) && (
             <Field label="Preferred Phone">
               <div className="space-y-1">
                 {contactPhones.map((p) => (
@@ -938,14 +1023,21 @@ export function CallLogClient({
             />
           </Field>
 
-          {/* Re: Client */}
+          {/* Re: Client — auto-filled when a client is the caller */}
           <Field label="Re: Client">
-            <RelationPicker
-              value={form.client_id}
-              onChange={(id) => setForm({ ...form, client_id: id })}
-              options={clientOptions}
-              placeholder="Select client..."
-            />
+            {form.contact_type === "client" ? (
+              <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-600">
+                {clientsCache.get(form.client_id || "")?.full_name || "—"}
+                <span className="ml-1 text-[10px] text-zinc-400">(caller)</span>
+              </div>
+            ) : (
+              <RelationPicker
+                value={form.client_id}
+                onChange={(id) => setForm({ ...form, client_id: id })}
+                options={clientOptions}
+                placeholder="Select client..."
+              />
+            )}
           </Field>
 
           {/* Who Makes the Call */}

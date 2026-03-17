@@ -136,6 +136,8 @@ export function ContactsClient({
   const [relatedCalls, setRelatedCalls] = useState<
     { id: string; about: string; call_status: string; due_date: string | null }[]
   >([]);
+  const [callsHasMore, setCallsHasMore] = useState(false);
+  const [callsLoading, setCallsLoading] = useState(false);
 
   const totalPages = Math.ceil(totalCount / pageSize);
 
@@ -215,7 +217,7 @@ export function ContactsClient({
         .select("id, about, call_status, due_date")
         .eq("contact_id", contact.id)
         .order("due_date", { ascending: false })
-        .limit(20),
+        .range(0, 20),
     ]);
     setRelatedMeetings(
       (meetings || [])
@@ -223,6 +225,25 @@ export function ContactsClient({
         .filter(Boolean)
     );
     setRelatedCalls(calls || []);
+    setCallsHasMore((calls || []).length > 20);
+  }
+
+  async function loadMoreCalls(contactId: string) {
+    setCallsLoading(true);
+    try {
+      const { data } = await supabase
+        .from("calls")
+        .select("id, about, call_status, due_date")
+        .eq("contact_id", contactId)
+        .order("due_date", { ascending: false })
+        .range(relatedCalls.length, relatedCalls.length + 20);
+      if (data) {
+        setRelatedCalls((prev) => [...prev, ...data]);
+        setCallsHasMore(data.length > 20);
+      }
+    } finally {
+      setCallsLoading(false);
+    }
   }
 
   const handleSave = useCallback(async () => {
@@ -601,15 +622,26 @@ export function ContactsClient({
             {relatedCalls.length === 0 ? (
               <p className="text-sm text-zinc-400 py-4 text-center">No calls yet.</p>
             ) : (
-              relatedCalls.map((c) => (
-                <div key={c.id} className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2">
-                  <div>
-                    <p className="text-sm font-medium text-black">{c.about}</p>
-                    <p className="text-xs text-zinc-500">{c.due_date ? new Date(c.due_date).toLocaleDateString() : "No date"}</p>
+              <>
+                {relatedCalls.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium text-black">{c.about}</p>
+                      <p className="text-xs text-zinc-500">{c.due_date ? new Date(c.due_date).toLocaleDateString() : "No date"}</p>
+                    </div>
+                    <StatusBadge status={c.call_status} />
                   </div>
-                  <StatusBadge status={c.call_status} />
-                </div>
-              ))
+                ))}
+                {callsHasMore && editingId && (
+                  <button
+                    onClick={() => loadMoreCalls(editingId)}
+                    disabled={callsLoading}
+                    className="w-full py-2 text-xs text-zinc-500 hover:text-black transition-colors disabled:opacity-50"
+                  >
+                    {callsLoading ? "Loading..." : "Load more calls"}
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}

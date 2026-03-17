@@ -8,6 +8,7 @@ export interface RelationOption {
   id: string;
   label: string;
   sublabel?: string;
+  tag?: string;
 }
 
 interface RelationPickerProps {
@@ -180,6 +181,11 @@ export function RelationPicker({
                   >
                     <span className="flex-1 text-left">
                       <span className="text-black">{o.label}</span>
+                      {o.tag && (
+                        <span className="ml-1.5 inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                          {o.tag}
+                        </span>
+                      )}
                       {o.sublabel && (
                         <span className="ml-2 text-xs text-zinc-400">
                           {o.sublabel}
