@@ -158,7 +158,8 @@ export function CallLogClient({
   // Phone/email sub-records for the currently selected caller
   const [callerPhones, setCallerPhones] = useState<PhoneRecord[]>([]);
   const [callerEmails, setCallerEmails] = useState<EmailRecord[]>([]);
-  const [newPhoneDesignation, setNewPhoneDesignation] = useState("Cell");
+  // New phones being added inline on the call panel
+  const [newPhones, setNewPhones] = useState<{ designation: string; number: string }[]>([]);
 
 
   // Filters — default to "open" (everything except completed)
@@ -334,6 +335,7 @@ export function CallLogClient({
     if (!entityId) {
       setCallerPhones([]);
       setCallerEmails([]);
+      setNewPhones([]);
       return;
     }
     Promise.all([
@@ -430,7 +432,7 @@ export function CallLogClient({
         call_status: form.call_status,
         priority: form.priority,
         preferred_phone: form.preferred_phone === "new" ? null : form.preferred_phone,
-        phone_custom: form.preferred_phone === "new" ? form.phone_custom : null,
+        phone_custom: null,
         quick_connect: false,
         log_time: form.log_time || null,
         due_date: form.due_date || null,
@@ -467,29 +469,39 @@ export function CallLogClient({
           setCalls((prev) => [data as CallRow, ...prev]);
         }
       }
-      // Create new phone on the contact and link it to this call
-      if (form.preferred_phone === "new" && form.phone_custom && savedCallId) {
-        const entityType = form.contact_type === "client" ? "client" : "person";
-        const entityId = form.contact_type === "client" ? form.client_id : form.contact_id;
-        if (entityId) {
-          const { data: newPhone } = await supabase.from("contact_phones").insert({
-            entity_type: entityType,
-            entity_id: entityId,
-            designation: newPhoneDesignation,
-            number: form.phone_custom,
-            is_primary: callerPhones.length === 0,
-          }).select("id").single();
-          if (newPhone) {
-            await supabase.from("calls").update({ preferred_phone: newPhone.id, phone_custom: null }).eq("id", savedCallId);
-          }
+      // Save any new phones to the contact record
+      const entityType = form.contact_type === "client" ? "client" : "person";
+      const entityId = form.contact_type === "client" ? form.client_id : form.contact_id;
+      const phonesToSave = newPhones.filter((p) => p.number.trim());
+      if (phonesToSave.length > 0 && entityId) {
+        const rows = phonesToSave.map((p, i) => ({
+          entity_type: entityType,
+          entity_id: entityId,
+          designation: p.designation,
+          number: p.number,
+          is_primary: callerPhones.length === 0 && i === 0,
+        }));
+        const { data: inserted } = await supabase.from("contact_phones").insert(rows).select("id");
+        // If the preferred phone was set to "new", link the first new phone to this call
+        if (form.preferred_phone === "new" && inserted && inserted.length > 0 && savedCallId) {
+          await supabase.from("calls").update({ preferred_phone: inserted[0].id, phone_custom: null }).eq("id", savedCallId);
         }
+        // Refresh callerPhones so they show immediately
+        const { data: refreshed } = await supabase
+          .from("contact_phones")
+          .select("id, designation, number, is_primary")
+          .eq("entity_type", entityType)
+          .eq("entity_id", entityId)
+          .order("is_primary", { ascending: false });
+        if (refreshed) setCallerPhones(refreshed as PhoneRecord[]);
+        setNewPhones([]);
       }
 
       setPanelOpen(false);
     } finally {
       setSaving(false);
     }
-  }, [form, editingId, userId, supabase]);
+  }, [form, editingId, userId, supabase, newPhones, callerPhones]);
 
   const handleDelete = useCallback(async () => {
     if (!editingId || !confirm("Delete this call?")) return;
@@ -962,45 +974,51 @@ export function CallLogClient({
                     No phone numbers on file.
                   </p>
                 )}
-                {/* Add new phone inline */}
-                {form.preferred_phone === "new" ? (
-                  <div className="rounded-md border border-black bg-zinc-50 px-3 py-2 space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="phone"
-                        checked
-                        readOnly
-                        className="accent-black"
-                      />
-                      <select
-                        value={newPhoneDesignation}
-                        onChange={(e) => setNewPhoneDesignation(e.target.value)}
-                        className="rounded border border-zinc-200 bg-white px-2 py-1 text-xs outline-none"
-                      >
-                        {["Cell", "Office", "Home", "Assistant", "Fax", "Other"].map((d) => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
-                      </select>
-                      <input
-                        value={form.phone_custom || ""}
-                        onChange={(e) => setForm({ ...form, phone_custom: e.target.value })}
-                        placeholder="Phone number"
-                        className="flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-xs outline-none"
-                        autoFocus
-                      />
-                    </div>
-                    <p className="text-[10px] text-zinc-400">This number will be saved to the contact record.</p>
+                {/* New phones being added */}
+                {newPhones.map((np, i) => (
+                  <div key={`new-${i}`} className="flex items-center gap-2 rounded-md border border-dashed border-zinc-300 px-3 py-1.5">
+                    <input
+                      type="radio"
+                      name="phone"
+                      checked={form.preferred_phone === "new" && i === 0}
+                      onChange={() => setForm({ ...form, preferred_phone: "new" })}
+                      className="accent-black"
+                    />
+                    <select
+                      value={np.designation}
+                      onChange={(e) => setNewPhones((prev) => prev.map((p, j) => j === i ? { ...p, designation: e.target.value } : p))}
+                      className="rounded border border-zinc-200 bg-white px-2 py-1 text-xs outline-none"
+                    >
+                      {["Cell", "Office", "Home", "Assistant", "Fax", "Other"].map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                    <input
+                      value={np.number}
+                      onChange={(e) => setNewPhones((prev) => prev.map((p, j) => j === i ? { ...p, number: e.target.value } : p))}
+                      placeholder="Phone number"
+                      className="flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-xs outline-none"
+                      autoFocus={i === newPhones.length - 1}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setNewPhones((prev) => prev.filter((_, j) => j !== i))}
+                      className="text-zinc-400 hover:text-red-500 text-xs"
+                    >
+                      ✕
+                    </button>
                   </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setForm({ ...form, preferred_phone: "new", phone_custom: null })}
-                    className="inline-flex items-center gap-1 px-1 py-1 text-xs text-zinc-400 hover:text-black transition-colors"
-                  >
-                    + Add Phone
-                  </button>
+                ))}
+                {newPhones.length > 0 && (
+                  <p className="text-[10px] text-zinc-400 px-1">New numbers will be saved to the contact record.</p>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setNewPhones((prev) => [...prev, { designation: "Cell", number: "" }])}
+                  className="inline-flex items-center gap-1 px-1 py-1 text-xs text-zinc-400 hover:text-black transition-colors"
+                >
+                  + Add Phone
+                </button>
               </div>
             </Field>
           )}
