@@ -1,44 +1,47 @@
-import { execSync } from "child_process";
-import { resolve } from "path";
-
 const BOX_API = "https://api.box.com/2.0";
 const BOX_UPLOAD_API = "https://upload.box.com/api/2.0";
 
 const BOX_CLIENT_ID = process.env.BOX_CLIENT_ID!;
 const BOX_CLIENT_SECRET = process.env.BOX_CLIENT_SECRET!;
-const BOX_AUTH_DB = resolve(process.env.HOME || "", ".box-mcp/.auth.oauth");
-const BOX_VENV_PYTHON = resolve(process.env.HOME || "", ".box-mcp/.venv/bin/python3");
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 let cachedTokens: { access_token: string; refresh_token: string } | null = null;
 
-function loadTokensFromDb(): { access_token: string; refresh_token: string } {
-  const script = `
-import sqlite3, pickle, json
-conn = sqlite3.connect("${BOX_AUTH_DB}")
-rows = conn.execute("SELECT value FROM Dict WHERE key=?", (b"token",)).fetchone()
-if rows:
-    token = pickle.loads(rows[0])
-    print(json.dumps({
-        "access_token": token._raw_data.get("access_token", ""),
-        "refresh_token": token._raw_data.get("refresh_token", ""),
-    }))
-conn.close()
-`;
-  const result = execSync(`${BOX_VENV_PYTHON} -c '${script}'`, {
-    encoding: "utf-8",
+async function loadTokensFromSupabase(): Promise<{ access_token: string; refresh_token: string }> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/box_tokens?id=eq.1&select=access_token,refresh_token`, {
+    headers: {
+      apikey: SUPABASE_SERVICE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+    },
   });
-  return JSON.parse(result.trim());
+  if (!res.ok) throw new Error(`Failed to load Box tokens from Supabase: ${res.status}`);
+  const rows = await res.json();
+  if (!rows || rows.length === 0) throw new Error("No Box tokens found in Supabase");
+  return { access_token: rows[0].access_token, refresh_token: rows[0].refresh_token };
 }
 
-function getTokens() {
+async function saveTokensToSupabase(access_token: string, refresh_token: string) {
+  await fetch(`${SUPABASE_URL}/rest/v1/box_tokens?id=eq.1`, {
+    method: "PATCH",
+    headers: {
+      apikey: SUPABASE_SERVICE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ access_token, refresh_token, updated_at: new Date().toISOString() }),
+  });
+}
+
+async function getTokens() {
   if (!cachedTokens) {
-    cachedTokens = loadTokensFromDb();
+    cachedTokens = await loadTokensFromSupabase();
   }
   return cachedTokens;
 }
 
 async function refreshToken(): Promise<string> {
-  const tokens = getTokens();
+  const tokens = await getTokens();
   const res = await fetch("https://api.box.com/oauth2/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -59,6 +62,8 @@ async function refreshToken(): Promise<string> {
     access_token: data.access_token,
     refresh_token: data.refresh_token,
   };
+  // Persist new tokens to Supabase
+  await saveTokensToSupabase(data.access_token, data.refresh_token);
   return data.access_token;
 }
 
@@ -67,7 +72,7 @@ async function boxFetch(
   options: RequestInit = {},
   retry = true
 ): Promise<Response> {
-  const tokens = getTokens();
+  const tokens = await getTokens();
   const res = await fetch(url, {
     ...options,
     headers: {
@@ -119,11 +124,9 @@ export async function getDownloadUrl(fileId: string): Promise<string> {
   const res = await boxFetch(`${BOX_API}/files/${fileId}/content`, {
     redirect: "manual",
   });
-  // Box returns a 302 redirect to the actual download URL
   if (res.status === 302) {
     return res.headers.get("location") || "";
   }
-  // Sometimes it returns 200 with the content directly
   if (res.ok) {
     return `${BOX_API}/files/${fileId}/content`;
   }
@@ -162,7 +165,6 @@ export async function uploadFile(
     parent: { id: folderId },
   });
 
-  // Box upload uses multipart form data
   const boundary = "----BoxUpload" + Date.now();
   const parts = [
     `--${boundary}\r\nContent-Disposition: form-data; name="attributes"\r\nContent-Type: application/json\r\n\r\n${attributes}\r\n`,
@@ -173,7 +175,7 @@ export async function uploadFile(
   const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
   const body = Buffer.concat([prefix, fileBuffer, suffix]);
 
-  const tokens = getTokens();
+  const tokens = await getTokens();
   const res = await fetch(`${BOX_UPLOAD_API}/files/content`, {
     method: "POST",
     headers: {
