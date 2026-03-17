@@ -130,6 +130,9 @@ export function ContactsClient({
   const [relatedSubmissions, setRelatedSubmissions] = useState<
     { id: string; description: string; status: string }[]
   >([]);
+  const [relatedMaterials, setRelatedMaterials] = useState<
+    { id: string; title: string; material_type: string | null; direction: string | null; response: string | null }[]
+  >([]);
 
   // Sub-record state for phones/emails/addresses
   const [phones, setPhones] = useState<PhoneRecord[]>([]);
@@ -340,6 +343,45 @@ export function ContactsClient({
         .map((s: Record<string, unknown>) => s.submission as { id: string; description: string; status: string })
         .filter(Boolean)
     );
+
+    // Fetch materials related to this contact via submissions
+    const subIds = (submissions || [])
+      .map((s: Record<string, unknown>) => (s.submission as { id: string } | null)?.id)
+      .filter(Boolean) as string[];
+    if (subIds.length > 0) {
+      const { data: subMats } = await supabase
+        .from("submission_materials")
+        .select("material:client_materials(id, title, material_type, direction)")
+        .in("submission_id", subIds);
+      const seen = new Set<string>();
+      const uniqueMats: { id: string; title: string; material_type: string | null; direction: string | null }[] = [];
+      for (const row of subMats || []) {
+        const mat = (row as Record<string, unknown>).material as { id: string; title: string; material_type: string | null; direction: string | null } | null;
+        if (mat && !seen.has(mat.id)) {
+          seen.add(mat.id);
+          uniqueMats.push(mat);
+        }
+      }
+      const matIds = uniqueMats.map((m) => m.id);
+      if (matIds.length > 0) {
+        const { data: responses } = await supabase
+          .from("material_responses")
+          .select("material_id, response")
+          .eq("person_id", contact.id)
+          .in("material_id", matIds);
+        const respMap: Record<string, string> = {};
+        for (const r of responses || []) {
+          respMap[r.material_id] = r.response;
+        }
+        setRelatedMaterials(
+          uniqueMats.map((m) => ({ ...m, response: respMap[m.id] || null }))
+        );
+      } else {
+        setRelatedMaterials([]);
+      }
+    } else {
+      setRelatedMaterials([]);
+    }
   }
 
   async function loadMoreCalls(contactId: string) {
@@ -439,6 +481,7 @@ export function ContactsClient({
           { id: "meetings", label: "Meetings" },
           { id: "calls", label: "Calls" },
           { id: "submissions", label: "Submissions" },
+          { id: "materials", label: "Materials" },
         ]
       : []),
   ];
@@ -707,6 +750,65 @@ export function ContactsClient({
                   }`}>
                     {s.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                   </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+        {activeTab === "materials" && (
+          <div className="space-y-2">
+            {relatedMaterials.length === 0 ? (
+              <p className="text-sm text-zinc-400 py-4 text-center">No materials yet.</p>
+            ) : (
+              relatedMaterials.map((m) => (
+                <div key={m.id} className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-black">{m.title}</p>
+                    <p className="text-xs text-zinc-500">
+                      {[m.material_type, m.direction].filter(Boolean).map((v) => (v as string).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())).join(" · ") || "—"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {m.response ? (
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                        m.response === "love" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                        m.response === "like" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                        m.response === "meh" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                        "bg-red-50 text-red-700 border-red-200"
+                      }`}>
+                        {m.response.charAt(0).toUpperCase() + m.response.slice(1)}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-zinc-400">No response</span>
+                    )}
+                    <select
+                      value={m.response || ""}
+                      onChange={async (e) => {
+                        const val = e.target.value;
+                        if (val) {
+                          await supabase.from("material_responses").upsert(
+                            { material_id: m.id, person_id: editingId!, response: val },
+                            { onConflict: "material_id,person_id" }
+                          );
+                        } else {
+                          await supabase.from("material_responses")
+                            .delete()
+                            .eq("material_id", m.id)
+                            .eq("person_id", editingId!);
+                        }
+                        setRelatedMaterials((prev) =>
+                          prev.map((mat) => mat.id === m.id ? { ...mat, response: val || null } : mat)
+                        );
+                      }}
+                      className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] text-zinc-600 outline-none"
+                    >
+                      <option value="">—</option>
+                      <option value="love">Love</option>
+                      <option value="like">Like</option>
+                      <option value="meh">Meh</option>
+                      <option value="hate">Hate</option>
+                    </select>
+                  </div>
                 </div>
               ))
             )}

@@ -19,6 +19,7 @@ const TYPE_LABELS: Record<string, string> = {
   meeting: "Meeting",
   submission: "Submission",
   call: "Call",
+  material: "Material",
 };
 
 const TYPE_COLORS: Record<string, string> = {
@@ -28,6 +29,7 @@ const TYPE_COLORS: Record<string, string> = {
   meeting: "bg-emerald-50 text-emerald-700",
   submission: "bg-orange-50 text-orange-700",
   call: "bg-zinc-100 text-zinc-700",
+  material: "bg-pink-50 text-pink-700",
 };
 
 export function OmniSearch() {
@@ -76,7 +78,7 @@ export function OmniSearch() {
       setSearching(true);
       try {
         const pattern = `%${q}%`;
-        const [people, clients, projects, meetings, submissions, calls] =
+        const [people, clients, projects, meetings, submissions, calls, materials] =
           await Promise.all([
             supabase
               .from("people")
@@ -107,6 +109,11 @@ export function OmniSearch() {
               .from("calls")
               .select("id, about, contact:people!contact_id(full_name)")
               .ilike("about", pattern)
+              .limit(5),
+            supabase
+              .from("client_materials")
+              .select("id, title")
+              .ilike("title", pattern)
               .limit(5),
           ]);
 
@@ -171,6 +178,12 @@ export function OmniSearch() {
               type: "call",
               url: `/calls?open=${r.id}`,
             })),
+          ...(materials.data || []).map((r) => ({
+            id: r.id,
+            label: r.title,
+            type: "material",
+            url: `/materials`,
+          })),
         ];
 
         setResults(all);

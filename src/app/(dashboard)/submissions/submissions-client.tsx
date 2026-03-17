@@ -82,6 +82,12 @@ export function SubmissionsClient({ userId }: SubmissionsClientProps) {
   const [deleting, setDeleting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<SubmissionStatus | "">("");
 
+  // Materials state
+  const [materials, setMaterials] = useState<{ id: string; title: string }[]>([]);
+  const [materialResponses, setMaterialResponses] = useState<Record<string, Record<string, string>>>({});
+  const [allMaterials, setAllMaterials] = useState<{ id: string; title: string }[]>([]);
+  const [showMaterialPicker, setShowMaterialPicker] = useState(false);
+
   const [relationCache, setRelationCache] = useState<
     Record<string, { clientNames: string[]; personNames: string[] }>
   >({});
@@ -182,11 +188,37 @@ export function SubmissionsClient({ userId }: SubmissionsClientProps) {
   async function openEdit(sub: SubmissionRow) {
     setEditingId(sub.id);
 
-    const [{ data: sc }, { data: sp }, { data: spr }] = await Promise.all([
+    const [{ data: sc }, { data: sp }, { data: spr }, { data: smData }, { data: allMatsData }] = await Promise.all([
       supabase.from("submission_clients").select("client_id").eq("submission_id", sub.id),
       supabase.from("submission_people").select("person_id").eq("submission_id", sub.id),
       supabase.from("submission_projects").select("project_id").eq("submission_id", sub.id),
+      supabase.from("submission_materials").select("material:client_materials(id, title)").eq("submission_id", sub.id),
+      supabase.from("client_materials").select("id, title").order("title"),
     ]);
+
+    const mats = (smData || [])
+      .map((r: Record<string, unknown>) => r.material as { id: string; title: string } | null)
+      .filter(Boolean) as { id: string; title: string }[];
+    setMaterials(mats);
+    setAllMaterials(allMatsData || []);
+    setShowMaterialPicker(false);
+
+    // Fetch material responses for these materials
+    const matIds = mats.map((m) => m.id);
+    if (matIds.length > 0) {
+      const { data: respData } = await supabase
+        .from("material_responses")
+        .select("material_id, person_id, response")
+        .in("material_id", matIds);
+      const respMap: Record<string, Record<string, string>> = {};
+      for (const r of respData || []) {
+        if (!respMap[r.material_id]) respMap[r.material_id] = {};
+        respMap[r.material_id][r.person_id] = r.response;
+      }
+      setMaterialResponses(respMap);
+    } else {
+      setMaterialResponses({});
+    }
 
     // Add any reasons from this record that aren't in our list
     if (sub.reason) {
@@ -266,6 +298,14 @@ export function SubmissionsClient({ userId }: SubmissionsClientProps) {
               )
             : Promise.resolve(),
         ]);
+
+        // Sync submission_materials
+        await supabase.from("submission_materials").delete().eq("submission_id", subId);
+        if (materials.length > 0) {
+          await supabase.from("submission_materials").insert(
+            materials.map((m) => ({ submission_id: subId!, material_id: m.id }))
+          );
+        }
 
         const { data: updated } = await supabase
           .from("submissions")
@@ -471,6 +511,122 @@ export function SubmissionsClient({ userId }: SubmissionsClientProps) {
               onAdd={createProject}
               addLabel="Create project"
             />
+          </Field>
+          {/* Materials */}
+          <Field label="Materials">
+            <div className="space-y-2">
+              {materials.map((mat) => (
+                <div key={mat.id} className="rounded-md border border-zinc-200 px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-black">{mat.title}</span>
+                    <button
+                      onClick={() => setMaterials((prev) => prev.filter((m) => m.id !== mat.id))}
+                      className="text-xs text-zinc-400 hover:text-red-500 transition-colors"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  {form.person_ids.length > 0 && (
+                    <div className="mt-1.5 space-y-1">
+                      {form.person_ids.map((pid) => {
+                        const personName = personOptions.find((p) => p.id === pid)?.label || "Unknown";
+                        const resp = materialResponses[mat.id]?.[pid] || "";
+                        return (
+                          <div key={pid} className="flex items-center gap-2">
+                            <span className="text-xs text-zinc-500 w-32 truncate">{personName}</span>
+                            {resp ? (
+                              <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                                resp === "love" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                resp === "like" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                                resp === "meh" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                                "bg-red-50 text-red-700 border-red-200"
+                              }`}>
+                                {resp.charAt(0).toUpperCase() + resp.slice(1)}
+                              </span>
+                            ) : null}
+                            <select
+                              value={resp}
+                              onChange={async (e) => {
+                                const val = e.target.value;
+                                if (val) {
+                                  await supabase.from("material_responses").upsert(
+                                    { material_id: mat.id, person_id: pid, response: val },
+                                    { onConflict: "material_id,person_id" }
+                                  );
+                                } else {
+                                  await supabase.from("material_responses")
+                                    .delete()
+                                    .eq("material_id", mat.id)
+                                    .eq("person_id", pid);
+                                }
+                                setMaterialResponses((prev) => {
+                                  const copy = { ...prev };
+                                  if (!copy[mat.id]) copy[mat.id] = {};
+                                  if (val) {
+                                    copy[mat.id] = { ...copy[mat.id], [pid]: val };
+                                  } else {
+                                    const inner = { ...copy[mat.id] };
+                                    delete inner[pid];
+                                    copy[mat.id] = inner;
+                                  }
+                                  return copy;
+                                });
+                              }}
+                              className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] text-zinc-600 outline-none"
+                            >
+                              <option value="">—</option>
+                              <option value="love">Love</option>
+                              <option value="like">Like</option>
+                              <option value="meh">Meh</option>
+                              <option value="hate">Hate</option>
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {showMaterialPicker ? (
+                <div className="space-y-1">
+                  <select
+                    onChange={(e) => {
+                      const matId = e.target.value;
+                      if (!matId) return;
+                      const mat = allMaterials.find((m) => m.id === matId);
+                      if (mat && !materials.find((m) => m.id === matId)) {
+                        setMaterials((prev) => [...prev, mat]);
+                      }
+                      setShowMaterialPicker(false);
+                    }}
+                    className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 outline-none"
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Select a material...</option>
+                    {allMaterials
+                      .filter((m) => !materials.find((em) => em.id === m.id))
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>{m.title}</option>
+                      ))}
+                  </select>
+                  <button onClick={() => setShowMaterialPicker(false)} className="text-xs text-zinc-400 hover:text-zinc-600">Cancel</button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (allMaterials.length === 0) {
+                      supabase.from("client_materials").select("id, title").order("title").then(({ data }) => {
+                        setAllMaterials(data || []);
+                      });
+                    }
+                    setShowMaterialPicker(true);
+                  }}
+                  className="text-xs text-zinc-500 hover:text-black transition-colors"
+                >
+                  + Add Material
+                </button>
+              )}
+            </div>
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Status">
