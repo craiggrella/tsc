@@ -271,12 +271,16 @@ export interface ClientMaterial {
   id: string;
   org_id: string;
   title: string;
-  client_id: string;
+  client_id: string | null;
+  is_client_material: boolean;
+  material_type: string | null;
+  direction: "Outgoing" | "Incoming";
   status: ClientMaterialStatus;
   format: string | null;
   genre: string | null;
   sub_genre: string | null;
   file_url: string | null;
+  box_file_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -288,6 +292,17 @@ export type ClientMaterialStatus =
   | "notes_given"
   | "editing"
   | "final_draft";
+
+export type MaterialType = "Pilot" | "Movie" | "Episode" | "Treatment" | "Script" | "Other";
+
+export interface MaterialResponse {
+  id: string;
+  org_id: string;
+  material_id: string;
+  person_id: string;
+  response: "love" | "like" | "meh" | "hate" | null;
+  created_at: string;
+}
 
 export interface Contract {
   id: string;

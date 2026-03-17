@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   FolderOpen,
   Clapperboard,
+  FileText,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ const navItems = [
   { label: "Clients", href: "/clients", icon: Users },
   { label: "Contacts", href: "/contacts", icon: Contact },
   { label: "Projects", href: "/projects", icon: Clapperboard },
+  { label: "Materials", href: "/materials", icon: FileText },
   { label: "Files", href: "/files", icon: FolderOpen },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
