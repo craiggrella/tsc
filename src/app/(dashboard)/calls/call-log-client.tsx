@@ -709,16 +709,16 @@ export function CallLogClient({
                   className="accent-black"
                 />
               </th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
                 About
               </th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
                 Contact
               </th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
                 Re: Client
               </th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
                 <button
                   onClick={() => toggleSort("call_status")}
                   className="inline-flex items-center gap-1 hover:text-black transition-colors"
@@ -727,7 +727,7 @@ export function CallLogClient({
                   <ArrowUpDown className="h-3 w-3" />
                 </button>
               </th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
                 <button
                   onClick={() => toggleSort("priority")}
                   className="inline-flex items-center gap-1 hover:text-black transition-colors"
@@ -736,10 +736,10 @@ export function CallLogClient({
                   <ArrowUpDown className="h-3 w-3" />
                 </button>
               </th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
                 Phone
               </th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
                 <button
                   onClick={() => toggleSort("due_date")}
                   className="inline-flex items-center gap-1 hover:text-black transition-colors"
@@ -748,7 +748,7 @@ export function CallLogClient({
                   <ArrowUpDown className="h-3 w-3" />
                 </button>
               </th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
                 <button
                   onClick={() => toggleSort("log_time")}
                   className="inline-flex items-center gap-1 hover:text-black transition-colors"
@@ -788,36 +788,36 @@ export function CallLogClient({
                       className="accent-black"
                     />
                   </td>
-                  <td className="px-3 py-2.5 font-medium text-black max-w-[200px] truncate">
+                  <td className="px-3 py-2.5 font-medium text-black whitespace-nowrap">
                     {call.about || "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-zinc-700">
+                  <td className="px-3 py-2.5 text-zinc-700 whitespace-nowrap">
                     {call.contact?.full_name || call.client?.full_name || "—"}
                     {!call.contact_id && call.client_id && (
                       <span className="ml-1 text-[10px] text-amber-600 font-medium">Client</span>
                     )}
                   </td>
-                  <td className="px-3 py-2.5 text-zinc-700">
+                  <td className="px-3 py-2.5 text-zinc-700 whitespace-nowrap">
                     {call.client?.full_name || "—"}
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-2.5 whitespace-nowrap">
                     <StatusDropdown
                       status={call.call_status}
                       onChange={(s) => quickStatusChange(call.id, s)}
                     />
                   </td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-2.5 whitespace-nowrap">
                     <StatusBadge status={call.priority} />
                   </td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs font-mono">
+                  <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
                     {getPhoneDisplay(call)}
                   </td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs">
+                  <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
                     {call.due_date
                       ? new Date(call.due_date).toLocaleDateString()
                       : "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs">
+                  <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
                     {call.log_time
                       ? new Date(call.log_time).toLocaleString([], {
                           month: "short",
