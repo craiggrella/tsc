@@ -345,7 +345,6 @@ export function SubmissionsClient({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Description</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Clients</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">People</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Status</th>
@@ -357,7 +356,7 @@ export function SubmissionsClient({
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-12 text-center text-sm text-zinc-400">
+                <td colSpan={6} className="px-3 py-12 text-center text-sm text-zinc-400">
                   <Send className="mx-auto mb-2 h-8 w-8 text-zinc-300" />
                   No submissions found.
                 </td>
@@ -371,9 +370,6 @@ export function SubmissionsClient({
                     onClick={() => openEdit(sub)}
                     className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                   >
-                    <td className="px-3 py-2.5 font-medium text-black max-w-[200px] truncate">
-                      {sub.description || "—"}
-                    </td>
                     <td className="px-3 py-2.5 text-zinc-700 text-xs">
                       {rel?.clientNames.join(", ") || "—"}
                     </td>
