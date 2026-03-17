@@ -39,7 +39,8 @@ export async function updateSession(request: NextRequest) {
   const isPublicRoute =
     pathname === "/" ||
     pathname.startsWith("/login") ||
-    pathname.startsWith("/auth");
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/api/box");
 
   // If no user and not on a public route, redirect to login
   if (!user && !isPublicRoute) {
