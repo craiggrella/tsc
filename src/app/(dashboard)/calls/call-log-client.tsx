@@ -906,7 +906,7 @@ export function CallLogClient({
               {callerPhones.map((p) => (
                 <div key={p.id} className="flex items-center gap-2 text-xs">
                   <span className="w-16 font-medium text-zinc-400">{p.designation}</span>
-                  <span className="font-mono text-zinc-700">{formatPhone(p.number)}</span>
+                  <span className="text-zinc-700">{formatPhone(p.number)}</span>
                   {p.is_primary && <span className="text-amber-500 text-[10px]">★</span>}
                 </div>
               ))}
@@ -946,7 +946,7 @@ export function CallLogClient({
                     <span className="text-xs font-medium text-zinc-500 w-16">
                       {p.designation}
                     </span>
-                    <span className="font-mono text-xs text-black">
+                    <span className="text-xs text-black">
                       {formatPhone(p.number)}
                     </span>
                   </label>
@@ -983,7 +983,7 @@ export function CallLogClient({
                         setForm({ ...form, phone_custom: e.target.value })
                       }
                       placeholder="Enter number..."
-                      className="flex-1 bg-transparent text-xs font-mono outline-none placeholder:text-zinc-400"
+                      className="flex-1 bg-transparent text-xs outline-none placeholder:text-zinc-400"
                     />
                   )}
                 </label>

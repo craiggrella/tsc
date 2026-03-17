@@ -467,7 +467,7 @@ export function ContactsClient({
                       </span>
                     ) : "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs font-mono">—</td>
+                  <td className="px-3 py-2.5 text-zinc-500 text-xs ">—</td>
                   <td className="px-3 py-2.5 text-zinc-500 text-xs">—</td>
                 </tr>
               ))

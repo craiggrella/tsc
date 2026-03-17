@@ -119,7 +119,7 @@ export function PhoneSection({
               value={phone.number}
               onChange={(e) => update(i, { number: e.target.value })}
               placeholder="Phone number"
-              className="flex-1 bg-transparent text-sm font-mono text-zinc-700 outline-none placeholder:text-zinc-300"
+              className="flex-1 bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
             />
             <button
               type="button"
