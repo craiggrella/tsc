@@ -109,10 +109,22 @@ export function MeetingsClient({
     () => people.map((p) => ({ id: p.id, label: p.full_name })),
     [people]
   );
+  const [projectList, setProjectList] = useState(projects);
   const projectOptions: RelationOption[] = useMemo(
-    () => projects.map((p) => ({ id: p.id, label: p.name })),
-    [projects]
+    () => projectList.map((p) => ({ id: p.id, label: p.name })),
+    [projectList]
   );
+
+  const createProject = useCallback(async (name: string): Promise<RelationOption | null> => {
+    const { data, error } = await supabase
+      .from("projects")
+      .insert({ name, status: "development" })
+      .select("id, name")
+      .single();
+    if (error || !data) return null;
+    setProjectList((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
+    return { id: data.id, label: data.name };
+  }, [supabase]);
 
   const filtered = useMemo(() => {
     let list = [...meetings];
@@ -511,6 +523,8 @@ export function MeetingsClient({
               onChange={(ids) => setForm({ ...form, project_ids: ids })}
               options={projectOptions}
               placeholder="Select projects..."
+              onAdd={createProject}
+              addLabel="Create project"
             />
           </Field>
           <Field label="Notes">

@@ -31,6 +31,8 @@ interface MultiRelationPickerProps {
   placeholder?: string;
   loading?: boolean;
   className?: string;
+  onAdd?: (name: string) => Promise<RelationOption | null>;
+  addLabel?: string;
 }
 
 export function RelationPicker({
@@ -235,9 +237,12 @@ export function MultiRelationPicker({
   placeholder = "Select...",
   loading,
   className,
+  onAdd,
+  addLabel = "Create",
 }: MultiRelationPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [adding, setAdding] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -310,40 +315,86 @@ export function MultiRelationPicker({
             {loading ? (
               <p className="px-3 py-2 text-xs text-zinc-400">Loading...</p>
             ) : filtered.length === 0 ? (
-              <p className="px-3 py-2 text-xs text-zinc-400">No results</p>
+              <div className="px-3 py-2">
+                <p className="text-xs text-zinc-400">No results</p>
+                {onAdd && query.trim() && (
+                  <button
+                    type="button"
+                    disabled={adding}
+                    onClick={async () => {
+                      setAdding(true);
+                      try {
+                        const result = await onAdd(query.trim());
+                        if (result) {
+                          onChange([...value, result.id]);
+                          setQuery("");
+                        }
+                      } finally {
+                        setAdding(false);
+                      }
+                    }}
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-black px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                  >
+                    {adding ? "Creating..." : `${addLabel} "${query.trim()}"`}
+                  </button>
+                )}
+              </div>
             ) : (
-              filtered.map((o) => (
-                <button
-                  key={o.id}
-                  type="button"
-                  onClick={() => toggle(o.id)}
-                  className={cn(
-                    "flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-zinc-50 transition-colors",
-                    value.includes(o.id) && "bg-zinc-50"
-                  )}
-                >
-                  <div
+              <>
+                {filtered.map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    onClick={() => toggle(o.id)}
                     className={cn(
-                      "flex h-4 w-4 items-center justify-center rounded border transition-colors",
-                      value.includes(o.id)
-                        ? "border-black bg-black"
-                        : "border-zinc-300"
+                      "flex w-full items-center gap-2 px-3 py-1.5 text-sm hover:bg-zinc-50 transition-colors",
+                      value.includes(o.id) && "bg-zinc-50"
                     )}
                   >
-                    {value.includes(o.id) && (
-                      <Check className="h-3 w-3 text-white" />
-                    )}
-                  </div>
-                  <span className="flex-1 text-left">
-                    <span className="text-black">{o.label}</span>
-                    {o.sublabel && (
-                      <span className="ml-2 text-xs text-zinc-400">
-                        {o.sublabel}
-                      </span>
-                    )}
-                  </span>
-                </button>
-              ))
+                    <div
+                      className={cn(
+                        "flex h-4 w-4 items-center justify-center rounded border transition-colors",
+                        value.includes(o.id)
+                          ? "border-black bg-black"
+                          : "border-zinc-300"
+                      )}
+                    >
+                      {value.includes(o.id) && (
+                        <Check className="h-3 w-3 text-white" />
+                      )}
+                    </div>
+                    <span className="flex-1 text-left">
+                      <span className="text-black">{o.label}</span>
+                      {o.sublabel && (
+                        <span className="ml-2 text-xs text-zinc-400">
+                          {o.sublabel}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                ))}
+                {onAdd && query.trim() && !filtered.some((o) => o.label.toLowerCase() === query.trim().toLowerCase()) && (
+                  <button
+                    type="button"
+                    disabled={adding}
+                    onClick={async () => {
+                      setAdding(true);
+                      try {
+                        const result = await onAdd(query.trim());
+                        if (result) {
+                          onChange([...value, result.id]);
+                          setQuery("");
+                        }
+                      } finally {
+                        setAdding(false);
+                      }
+                    }}
+                    className="flex w-full items-center gap-2 border-t border-zinc-100 px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-50 transition-colors"
+                  >
+                    <span className="text-xs">+ {addLabel} &ldquo;{query.trim()}&rdquo;</span>
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
