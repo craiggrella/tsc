@@ -163,9 +163,10 @@ export function CallLogClient({
   const [newPhones, setNewPhones] = useState<{ designation: string; number: string }[]>([]);
 
 
-  // Filters — default to "open" (everything except completed)
-  const [statusFilter, setStatusFilter] = useState<CallStatus | "open" | "">( "open");
+  // Filters — default to "open" (everything except completed) + current user
+  const [statusFilter, setStatusFilter] = useState<CallStatus | "open" | "">("open");
   const [priorityFilter, setPriorityFilter] = useState<string>("");
+  const [teamFilter, setTeamFilter] = useState<string>(userId);
 
   // Sorting
   const [sortField, setSortField] = useState<SortField>("due_date");
@@ -361,6 +362,7 @@ export function CallLogClient({
   // Filtered & sorted calls
   const filteredCalls = useMemo(() => {
     let list = [...calls];
+    if (teamFilter) list = list.filter((c) => c.user_id === teamFilter);
     if (statusFilter === "open") list = list.filter((c) => c.call_status !== "completed");
     else if (statusFilter) list = list.filter((c) => c.call_status === statusFilter);
     if (priorityFilter) list = list.filter((c) => c.priority === priorityFilter);
@@ -651,11 +653,25 @@ export function CallLogClient({
             </option>
           ))}
         </select>
-        {(statusFilter || priorityFilter) && (
+        <select
+          value={teamFilter}
+          onChange={(e) => setTeamFilter(e.target.value)}
+          className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 outline-none hover:border-zinc-300"
+        >
+          <option value={userId}>Me</option>
+          <option value="">All Team</option>
+          {profiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.id === userId ? `Me (${p.full_name})` : p.full_name}
+            </option>
+          ))}
+        </select>
+        {(statusFilter || priorityFilter || teamFilter) && (
           <button
             onClick={() => {
               setStatusFilter("");
               setPriorityFilter("");
+              setTeamFilter("");
             }}
             className="text-xs text-zinc-400 hover:text-zinc-600"
           >

@@ -105,10 +105,22 @@ export function OmniSearch() {
               .limit(5),
             supabase
               .from("calls")
-              .select("id, about")
+              .select("id, about, contact:people!contact_id(full_name)")
               .ilike("about", pattern)
               .limit(5),
           ]);
+
+        // Also find calls by contact name (people results → their calls)
+        const personIds = (people.data || []).map((r) => r.id);
+        let callsByContact: { id: string; about: string; contact: { full_name: string } | null }[] = [];
+        if (personIds.length > 0) {
+          const { data: cbc } = await supabase
+            .from("calls")
+            .select("id, about, contact:people!contact_id(full_name)")
+            .in("contact_id", personIds)
+            .limit(5);
+          callsByContact = (cbc || []) as unknown as typeof callsByContact;
+        }
 
         const all: SearchResult[] = [
           ...(people.data || []).map((r) => ({
@@ -141,12 +153,24 @@ export function OmniSearch() {
             type: "submission",
             url: `/submissions`,
           })),
-          ...(calls.data || []).map((r) => ({
-            id: r.id,
-            label: r.about,
-            type: "call",
-            url: `/calls?open=${r.id}`,
-          })),
+          ...(calls.data || []).map((r) => {
+            const contact = (r as unknown as { contact: { full_name: string } | null }).contact;
+            return {
+              id: r.id,
+              label: contact ? `${contact.full_name} — ${r.about}` : r.about,
+              type: "call",
+              url: `/calls?open=${r.id}`,
+            };
+          }),
+          // Calls found by contact name (dedupe with calls already found by about)
+          ...callsByContact
+            .filter((c) => !(calls.data || []).some((existing) => existing.id === c.id))
+            .map((r) => ({
+              id: r.id,
+              label: r.contact ? `${r.contact.full_name} — ${r.about}` : r.about,
+              type: "call",
+              url: `/calls?open=${r.id}`,
+            })),
         ];
 
         setResults(all);
