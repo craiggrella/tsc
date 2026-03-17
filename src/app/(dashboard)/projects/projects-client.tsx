@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { Plus, Search, Clapperboard, Filter } from "lucide-react";
+import { Plus, Search, Clapperboard, Filter, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -52,12 +52,17 @@ const STATUSES: { value: ProjectStatus; label: string }[] = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
+interface ProjectCompanyRow {
+  id?: string;
+  company_id: string;
+  designation: string;
+}
+
+const COMPANY_DESIGNATIONS = ["Network", "Studio", "Production Company"];
+
 const emptyForm = {
   name: "",
   status: "development" as ProjectStatus,
-  network_ids: [] as string[],
-  studio_ids: [] as string[],
-  production_company_ids: [] as string[],
   person_ids: [] as string[],
 };
 
@@ -77,6 +82,9 @@ export function ProjectsClient({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "">("");
   const [activeTab, setActiveTab] = useState("info");
+  const [projectCompanies, setProjectCompanies] = useState<ProjectCompanyRow[]>([]);
+  const [origCompanyIds, setOrigCompanyIds] = useState<Set<string>>(new Set());
+  const [companyList, setCompanyList] = useState(companies);
 
   // Display caches
   const [displayNetworks, setDisplayNetworks] = useState<string[]>([]);
@@ -102,8 +110,8 @@ export function ProjectsClient({
   >({});
 
   const companyOptions: RelationOption[] = useMemo(
-    () => companies.map((c) => ({ id: c.id, label: c.name })),
-    [companies]
+    () => companyList.map((c) => ({ id: c.id, label: c.name })),
+    [companyList]
   );
   const personOptions: RelationOption[] = useMemo(
     () => people.map((p) => ({ id: p.id, label: p.full_name, sublabel: p.title || undefined })),
@@ -125,32 +133,29 @@ export function ProjectsClient({
     const ids = filtered.map((p) => p.id).filter((id) => !tableCache[id]);
     if (ids.length === 0) return;
 
-    Promise.all([
-      supabase.from("project_networks").select("project_id, company:companies(name)").in("project_id", ids),
-      supabase.from("project_studios").select("project_id, company:companies(name)").in("project_id", ids),
-      supabase.from("project_production_companies").select("project_id, company:companies(name)").in("project_id", ids),
-    ]).then(([{ data: nets }, { data: studs }, { data: prods }]) => {
-      const cache: typeof tableCache = {};
-      for (const id of ids) cache[id] = { networks: [], studios: [], prodCos: [] };
-      for (const row of nets || []) {
-        const r = row as unknown as { project_id: string; company: { name: string } | null };
-        if (r.company && cache[r.project_id]) cache[r.project_id].networks.push(r.company.name);
-      }
-      for (const row of studs || []) {
-        const r = row as unknown as { project_id: string; company: { name: string } | null };
-        if (r.company && cache[r.project_id]) cache[r.project_id].studios.push(r.company.name);
-      }
-      for (const row of prods || []) {
-        const r = row as unknown as { project_id: string; company: { name: string } | null };
-        if (r.company && cache[r.project_id]) cache[r.project_id].prodCos.push(r.company.name);
-      }
-      setTableCache((prev) => ({ ...prev, ...cache }));
-    });
+    supabase
+      .from("project_companies")
+      .select("project_id, designation, company:companies(name)")
+      .in("project_id", ids)
+      .then(({ data }) => {
+        const cache: typeof tableCache = {};
+        for (const id of ids) cache[id] = { networks: [], studios: [], prodCos: [] };
+        for (const row of data || []) {
+          const r = row as unknown as { project_id: string; designation: string; company: { name: string } | null };
+          if (!r.company || !cache[r.project_id]) continue;
+          if (r.designation === "Network") cache[r.project_id].networks.push(r.company.name);
+          else if (r.designation === "Studio") cache[r.project_id].studios.push(r.company.name);
+          else if (r.designation === "Production Company") cache[r.project_id].prodCos.push(r.company.name);
+        }
+        setTableCache((prev) => ({ ...prev, ...cache }));
+      });
   }, [filtered, supabase]);
 
   function openNew() {
     setEditingId(null);
     setForm({ ...emptyForm });
+    setProjectCompanies([]);
+    setOrigCompanyIds(new Set());
     setActiveTab("info");
     setRelatedPeople([]);
     setExpandedPerson(null);
@@ -164,22 +169,22 @@ export function ProjectsClient({
 
     // Load join table IDs + related data
     const [
-      { data: nets },
-      { data: studs },
-      { data: prods },
+      { data: pcs },
       { data: ppl },
       { data: credits },
       { data: subs },
       { data: mtgs },
     ] = await Promise.all([
-      supabase.from("project_networks").select("company_id").eq("project_id", project.id),
-      supabase.from("project_studios").select("company_id").eq("project_id", project.id),
-      supabase.from("project_production_companies").select("company_id").eq("project_id", project.id),
+      supabase.from("project_companies").select("id, company_id, designation").eq("project_id", project.id),
       supabase.from("project_people").select("person_id").eq("project_id", project.id),
       supabase.from("client_credits").select("client:clients!client_id(id, full_name), level").eq("project_id", project.id),
       supabase.from("submission_projects").select("submission:submissions(id, description, status)").eq("project_id", project.id),
       supabase.from("meeting_projects").select("meeting:meetings(id, title, meeting_status, meeting_at)").eq("project_id", project.id),
     ]);
+
+    const pcList = (pcs || []) as ProjectCompanyRow[];
+    setProjectCompanies(pcList);
+    setOrigCompanyIds(new Set(pcList.filter((r) => r.id).map((r) => r.id!)));
 
     const personIds = (ppl || []).map((r) => r.person_id);
     const matchedPeople = people.filter((p) => personIds.includes(p.id));
@@ -187,9 +192,6 @@ export function ProjectsClient({
     setForm({
       name: project.name,
       status: project.status,
-      network_ids: (nets || []).map((r) => r.company_id),
-      studio_ids: (studs || []).map((r) => r.company_id),
-      production_company_ids: (prods || []).map((r) => r.company_id),
       person_ids: personIds,
     });
 
@@ -231,24 +233,25 @@ export function ProjectsClient({
       }
 
       if (projectId) {
-        // Sync all join tables
-        await Promise.all([
-          supabase.from("project_networks").delete().eq("project_id", projectId),
-          supabase.from("project_studios").delete().eq("project_id", projectId),
-          supabase.from("project_production_companies").delete().eq("project_id", projectId),
-          supabase.from("project_people").delete().eq("project_id", projectId),
-        ]);
+        // Sync project_companies
+        const currentIds = new Set(projectCompanies.filter((r) => r.id).map((r) => r.id!));
+        const toDelete = [...origCompanyIds].filter((id) => !currentIds.has(id));
+        if (toDelete.length > 0) {
+          await supabase.from("project_companies").delete().in("id", toDelete);
+        }
+        for (const pc of projectCompanies) {
+          if (pc.id) {
+            await supabase.from("project_companies").update({ company_id: pc.company_id, designation: pc.designation }).eq("id", pc.id);
+          } else {
+            await supabase.from("project_companies").insert({ project_id: projectId, company_id: pc.company_id, designation: pc.designation });
+          }
+        }
 
-        const inserts = [];
-        if (form.network_ids.length > 0)
-          inserts.push(supabase.from("project_networks").insert(form.network_ids.map((id) => ({ project_id: projectId!, company_id: id }))));
-        if (form.studio_ids.length > 0)
-          inserts.push(supabase.from("project_studios").insert(form.studio_ids.map((id) => ({ project_id: projectId!, company_id: id }))));
-        if (form.production_company_ids.length > 0)
-          inserts.push(supabase.from("project_production_companies").insert(form.production_company_ids.map((id) => ({ project_id: projectId!, company_id: id }))));
-        if (form.person_ids.length > 0)
-          inserts.push(supabase.from("project_people").insert(form.person_ids.map((id) => ({ project_id: projectId!, person_id: id }))));
-        await Promise.all(inserts);
+        // Sync people
+        await supabase.from("project_people").delete().eq("project_id", projectId);
+        if (form.person_ids.length > 0) {
+          await supabase.from("project_people").insert(form.person_ids.map((id) => ({ project_id: projectId!, person_id: id })));
+        }
 
         // Refresh project row
         const { data: updated } = await supabase.from("projects").select("*").eq("id", projectId).single();
@@ -446,30 +449,52 @@ export function ProjectsClient({
                 options={STATUSES}
               />
             </Field>
-            <Field label="Network(s)">
-              <MultiRelationPicker
-                value={form.network_ids}
-                onChange={(ids) => setForm({ ...form, network_ids: ids })}
-                options={companyOptions}
-                placeholder="Select networks..."
-              />
-            </Field>
-            <Field label="Studio(s)">
-              <MultiRelationPicker
-                value={form.studio_ids}
-                onChange={(ids) => setForm({ ...form, studio_ids: ids })}
-                options={companyOptions}
-                placeholder="Select studios..."
-              />
-            </Field>
-            <Field label="Production Company(s)">
-              <MultiRelationPicker
-                value={form.production_company_ids}
-                onChange={(ids) => setForm({ ...form, production_company_ids: ids })}
-                options={companyOptions}
-                placeholder="Select production companies..."
-              />
-            </Field>
+            {/* Companies with designation */}
+            <div>
+              <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-400">Companies</p>
+              <div className="space-y-1.5">
+                {projectCompanies.map((pc, i) => (
+                  <div key={pc.id || `new-${i}`} className="group flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-zinc-50 transition-colors">
+                    <select
+                      value={pc.designation}
+                      onChange={(e) => setProjectCompanies((prev) => prev.map((r, j) => j === i ? { ...r, designation: e.target.value } : r))}
+                      className="w-36 flex-shrink-0 appearance-none bg-transparent text-xs font-medium text-zinc-500 outline-none cursor-pointer hover:text-black transition-colors"
+                    >
+                      {COMPANY_DESIGNATIONS.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                    <div className="flex-1">
+                      <select
+                        value={pc.company_id}
+                        onChange={(e) => setProjectCompanies((prev) => prev.map((r, j) => j === i ? { ...r, company_id: e.target.value } : r))}
+                        className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-xs outline-none"
+                      >
+                        <option value="">Select company...</option>
+                        {companyOptions.map((c) => (
+                          <option key={c.id} value={c.id}>{c.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setProjectCompanies((prev) => prev.filter((_, j) => j !== i))}
+                      className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="h-3.5 w-3.5 text-zinc-400 hover:text-red-500 transition-colors" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setProjectCompanies((prev) => [...prev, { company_id: "", designation: "Network" }])}
+                className="mt-1 inline-flex items-center gap-1 px-1.5 py-1 text-xs text-zinc-400 hover:text-black transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                Add Company
+              </button>
+            </div>
             <Field label="People">
               <MultiRelationPicker
                 value={form.person_ids}
