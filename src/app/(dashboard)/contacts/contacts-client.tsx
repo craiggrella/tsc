@@ -132,6 +132,10 @@ export function ContactsClient({
     { id: string; about: string; call_status: string; due_date: string | null }[]
   >([]);
   const [callsHasMore, setCallsHasMore] = useState(false);
+
+  // Table display: primary/first phone and email per contact
+  const [tablePhones, setTablePhones] = useState<Record<string, string>>({});
+  const [tableEmails, setTableEmails] = useState<Record<string, string>>({});
   const [callsLoading, setCallsLoading] = useState(false);
   const [relatedSubmissions, setRelatedSubmissions] = useState<
     { id: string; description: string; status: string }[]
@@ -148,6 +152,38 @@ export function ContactsClient({
   const [origSocialIds, setOrigSocialIds] = useState<Set<string>>(new Set());
 
   const totalPages = Math.ceil(totalCount / pageSize);
+
+  // Fetch primary/first phone and email for contacts in the table
+  useEffect(() => {
+    if (contacts.length === 0) return;
+    const ids = contacts.map((c) => c.id);
+    Promise.all([
+      supabase
+        .from("contact_phones")
+        .select("entity_id, number, is_primary")
+        .eq("entity_type", "person")
+        .in("entity_id", ids)
+        .order("is_primary", { ascending: false }),
+      supabase
+        .from("contact_emails")
+        .select("entity_id, address, is_primary")
+        .eq("entity_type", "person")
+        .in("entity_id", ids)
+        .order("is_primary", { ascending: false }),
+    ]).then(([{ data: phones }, { data: emails }]) => {
+      const phoneMap: Record<string, string> = {};
+      for (const p of phones || []) {
+        if (!phoneMap[p.entity_id]) phoneMap[p.entity_id] = p.number;
+      }
+      setTablePhones(phoneMap);
+
+      const emailMap: Record<string, string> = {};
+      for (const e of emails || []) {
+        if (!emailMap[e.entity_id]) emailMap[e.entity_id] = e.address;
+      }
+      setTableEmails(emailMap);
+    });
+  }, [contacts, supabase]);
 
   // Auto-open a specific contact if directed via openContactId
   useEffect(() => {
@@ -442,7 +478,7 @@ export function ContactsClient({
 
       {/* Table */}
       <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[800px] text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Name</th>
@@ -468,18 +504,18 @@ export function ContactsClient({
                   onClick={() => openEdit(contact)}
                   className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                 >
-                  <td className="px-3 py-2.5 font-medium text-black">{contact.full_name}</td>
-                  <td className="px-3 py-2.5 text-zinc-500">{contact.title || "—"}</td>
-                  <td className="px-3 py-2.5 text-zinc-700">{contact.company?.name || "—"}</td>
-                  <td className="px-3 py-2.5">
+                  <td className="px-3 py-2.5 font-medium text-black whitespace-nowrap">{contact.full_name}</td>
+                  <td className="px-3 py-2.5 text-zinc-500 whitespace-nowrap">{contact.title || "—"}</td>
+                  <td className="px-3 py-2.5 text-zinc-700 whitespace-nowrap">{contact.company?.name || "—"}</td>
+                  <td className="px-3 py-2.5 whitespace-nowrap">
                     {contact.type ? (
                       <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
                         {contact.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                       </span>
                     ) : "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs ">—</td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs">—</td>
+                  <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{formatPhone(tablePhones[contact.id]) || "—"}</td>
+                  <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{tableEmails[contact.id] || "—"}</td>
                 </tr>
               ))
             )}
