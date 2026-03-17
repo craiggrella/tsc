@@ -490,6 +490,16 @@ export function MeetingsClient({
               placeholder="Search contacts..."
             />
           </Field>
+          <Field label="Projects">
+            <MultiRelationPicker
+              value={form.project_ids}
+              onChange={(ids) => setForm({ ...form, project_ids: ids })}
+              options={projectOptions}
+              placeholder="Select projects..."
+              onAdd={createProject}
+              addLabel="Create project"
+            />
+          </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Status">
               <Select
@@ -519,16 +529,6 @@ export function MeetingsClient({
               <Input value={form.location_link || ""} onChange={(e) => setForm({ ...form, location_link: e.target.value || null })} placeholder="Office, Zoom link, etc." />
             </Field>
           </div>
-          <Field label="Projects">
-            <MultiRelationPicker
-              value={form.project_ids}
-              onChange={(ids) => setForm({ ...form, project_ids: ids })}
-              options={projectOptions}
-              placeholder="Select projects..."
-              onAdd={createProject}
-              addLabel="Create project"
-            />
-          </Field>
           <Field label="Notes">
             <Textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value || null })} placeholder="Meeting notes..." />
           </Field>
