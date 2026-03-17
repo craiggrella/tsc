@@ -42,9 +42,9 @@ export async function GET(request: NextRequest) {
 
   const data = await res.json();
 
-  // Save tokens to Supabase
-  await fetch(`${SUPABASE_URL}/rest/v1/box_tokens?id=eq.1`, {
-    method: "PATCH",
+  // Save tokens to Supabase (upsert — creates or updates)
+  const saveRes = await fetch(`${SUPABASE_URL}/rest/v1/box_tokens`, {
+    method: "POST",
     headers: {
       apikey: SUPABASE_SERVICE_KEY,
       Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
@@ -58,6 +58,10 @@ export async function GET(request: NextRequest) {
       updated_at: new Date().toISOString(),
     }),
   });
+  if (!saveRes.ok) {
+    const saveErr = await saveRes.text();
+    return NextResponse.json({ error: "Failed to save tokens", details: saveErr }, { status: 500 });
+  }
 
   // Redirect to files page
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "localhost:3000";

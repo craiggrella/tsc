@@ -6,38 +6,38 @@ const BOX_CLIENT_SECRET = process.env.BOX_CLIENT_SECRET!;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-let cachedTokens: { access_token: string; refresh_token: string } | null = null;
-
 async function loadTokensFromSupabase(): Promise<{ access_token: string; refresh_token: string }> {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/box_tokens?id=eq.1&select=access_token,refresh_token`, {
     headers: {
       apikey: SUPABASE_SERVICE_KEY,
       Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
     },
+    cache: "no-store",
   });
   if (!res.ok) throw new Error(`Failed to load Box tokens from Supabase: ${res.status}`);
   const rows = await res.json();
-  if (!rows || rows.length === 0) throw new Error("No Box tokens found in Supabase");
+  if (!rows || rows.length === 0) throw new Error("No Box tokens found in Supabase. Visit /api/box/auth to authorize.");
   return { access_token: rows[0].access_token, refresh_token: rows[0].refresh_token };
 }
 
 async function saveTokensToSupabase(access_token: string, refresh_token: string) {
-  await fetch(`${SUPABASE_URL}/rest/v1/box_tokens?id=eq.1`, {
-    method: "PATCH",
+  // Upsert — creates or updates the single row
+  await fetch(`${SUPABASE_URL}/rest/v1/box_tokens`, {
+    method: "POST",
     headers: {
       apikey: SUPABASE_SERVICE_KEY,
       Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
       "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates",
     },
-    body: JSON.stringify({ access_token, refresh_token, updated_at: new Date().toISOString() }),
+    body: JSON.stringify({ id: 1, access_token, refresh_token, updated_at: new Date().toISOString() }),
   });
 }
 
 async function getTokens() {
-  if (!cachedTokens) {
-    cachedTokens = await loadTokensFromSupabase();
-  }
-  return cachedTokens;
+  // Always read fresh from Supabase — no in-memory cache
+  // Vercel serverless functions stay warm and would serve stale tokens
+  return await loadTokensFromSupabase();
 }
 
 async function refreshToken(): Promise<string> {
@@ -58,10 +58,6 @@ async function refreshToken(): Promise<string> {
   }
 
   const data = await res.json();
-  cachedTokens = {
-    access_token: data.access_token,
-    refresh_token: data.refresh_token,
-  };
   // Persist new tokens to Supabase
   await saveTokensToSupabase(data.access_token, data.refresh_token);
   return data.access_token;
