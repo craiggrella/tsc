@@ -219,8 +219,13 @@ export function MeetingsClient({
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
+      // Auto-generate title from clients + people
+      const clientNames = form.client_ids.map((id) => clientOptions.find((c) => c.id === id)?.label).filter(Boolean);
+      const personNames = form.person_ids.map((id) => personOptions.find((p) => p.id === id)?.label).filter(Boolean);
+      const autoTitle = [clientNames.join(", "), personNames.join(", ")].filter(Boolean).join(" — ") || "Meeting";
+
       const payload = {
-        title: form.title,
+        title: autoTitle,
         meeting_status: form.meeting_status,
         meeting_at: form.meeting_at || null,
         location_link: form.location_link || null,
@@ -469,8 +474,21 @@ export function MeetingsClient({
         }
       >
         <div className="space-y-4">
-          <Field label="Title">
-            <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Meeting title" />
+          <Field label="Client">
+            <MultiRelationPicker
+              value={form.client_ids}
+              onChange={(ids) => setForm({ ...form, client_ids: ids })}
+              options={clientOptions}
+              placeholder="Select clients..."
+            />
+          </Field>
+          <Field label="Meeting With">
+            <MultiRelationPicker
+              value={form.person_ids}
+              onChange={(ids) => setForm({ ...form, person_ids: ids })}
+              options={personOptions}
+              placeholder="Search contacts..."
+            />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Status">
@@ -501,22 +519,6 @@ export function MeetingsClient({
               <Input value={form.location_link || ""} onChange={(e) => setForm({ ...form, location_link: e.target.value || null })} placeholder="Office, Zoom link, etc." />
             </Field>
           </div>
-          <Field label="Clients">
-            <MultiRelationPicker
-              value={form.client_ids}
-              onChange={(ids) => setForm({ ...form, client_ids: ids })}
-              options={clientOptions}
-              placeholder="Select clients..."
-            />
-          </Field>
-          <Field label="Meeting With (People)">
-            <MultiRelationPicker
-              value={form.person_ids}
-              onChange={(ids) => setForm({ ...form, person_ids: ids })}
-              options={personOptions}
-              placeholder="Select people..."
-            />
-          </Field>
           <Field label="Projects">
             <MultiRelationPicker
               value={form.project_ids}
