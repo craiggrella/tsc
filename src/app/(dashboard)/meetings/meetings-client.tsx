@@ -180,22 +180,21 @@ export function MeetingsClient({ userId }: MeetingsClientProps) {
 
       {/* Table */}
       <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Client(s)</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Meeting With</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Our Team</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Status</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Date & Time</th>
+              <th className="w-40 px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Client(s)</th>
+              <th className="w-40 px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Meeting With</th>
+              <th className="w-32 px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Our Team</th>
+              <th className="w-24 px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Status</th>
+              <th className="w-36 px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Date & Time</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Location</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Response</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-12 text-center text-sm text-zinc-400">
+                <td colSpan={6} className="px-3 py-12 text-center text-sm text-zinc-400">
                   <Calendar className="mx-auto mb-2 h-8 w-8 text-zinc-300" />
                   No meetings found.
                 </td>
@@ -209,33 +208,33 @@ export function MeetingsClient({ userId }: MeetingsClientProps) {
                     onClick={() => router.push(`/meetings/${meeting.id}`)}
                     className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                   >
-                    <td className="px-3 py-2.5 text-zinc-700 text-xs whitespace-nowrap">
-                      {rel?.clientNames.join(", ") || "\u2014"}
+                    <td className="w-40 px-3 py-2.5 text-zinc-700 text-xs">
+                      <span className="line-clamp-2">{rel?.clientNames.join(", ") || "\u2014"}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-zinc-700 text-xs whitespace-nowrap">
-                      {rel?.personNames.join(", ") || "\u2014"}
+                    <td className="w-40 px-3 py-2.5 text-zinc-700 text-xs">
+                      <span className="line-clamp-2">{rel?.personNames.join(", ") || "\u2014"}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-zinc-700 text-xs whitespace-nowrap">
-                      {rel?.attendeeNames.join(", ") || "\u2014"}
+                    <td className="w-32 px-3 py-2.5 text-zinc-700 text-xs">
+                      <span className="line-clamp-2">{rel?.attendeeNames.join(", ") || "\u2014"}</span>
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
+                    <td className="w-24 px-3 py-2.5">
                       <StatusBadge status={meeting.meeting_status} />
                     </td>
+                    <td className="w-36 px-3 py-2.5 text-zinc-500 text-xs">
+                      <span className="line-clamp-2">
+                        {meeting.meeting_at
+                          ? new Date(meeting.meeting_at).toLocaleString([], {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric",
+                              hour: "numeric",
+                              minute: "2-digit",
+                            })
+                          : "\u2014"}
+                      </span>
+                    </td>
                     <td className="px-3 py-2.5 text-zinc-500 text-xs">
-                      {meeting.meeting_at
-                        ? new Date(meeting.meeting_at).toLocaleString([], {
-                            month: "short",
-                            day: "numeric",
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })
-                        : "\u2014"}
-                    </td>
-                    <td className="px-3 py-2.5 text-zinc-500 text-xs max-w-[150px] truncate">
-                      {meeting.location_link || "\u2014"}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      <StatusBadge status={meeting.response} />
+                      <span className="line-clamp-2">{meeting.location_link || "\u2014"}</span>
                     </td>
                   </tr>
                 );

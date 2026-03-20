@@ -20,19 +20,11 @@ const MEETING_STATUSES: { value: MeetingStatus; label: string }[] = [
   { value: "cancelled", label: "Cancelled" },
 ];
 
-const RESPONSES = [
-  { value: "love", label: "Love" },
-  { value: "like", label: "Like" },
-  { value: "meh", label: "Meh" },
-  { value: "hate", label: "Hate" },
-];
-
 const emptyForm = {
   title: "",
   meeting_status: "need_to_set" as MeetingStatus,
   meeting_at: null as string | null,
   location_link: null as string | null,
-  response: null as "love" | "like" | "meh" | "hate" | null,
   notes: null as string | null,
   client_ids: [] as string[],
   person_ids: [] as string[],
@@ -110,7 +102,6 @@ export function NewMeeting({ userId }: NewMeetingProps) {
         meeting_status: form.meeting_status,
         meeting_at: form.meeting_at || null,
         location_link: form.location_link || null,
-        response: form.response,
         notes: form.notes || null,
       };
 
@@ -210,23 +201,13 @@ export function NewMeeting({ userId }: NewMeetingProps) {
             addLabel="Create project"
           />
         </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Status">
-            <Select
-              value={form.meeting_status}
-              onChange={(e) => setForm({ ...form, meeting_status: e.target.value as MeetingStatus })}
-              options={MEETING_STATUSES}
-            />
-          </Field>
-          <Field label="Response">
-            <Select
-              value={form.response || ""}
-              onChange={(e) => setForm({ ...form, response: (e.target.value || null) as typeof form.response })}
-              options={RESPONSES}
-              placeholder="None"
-            />
-          </Field>
-        </div>
+        <Field label="Status">
+          <Select
+            value={form.meeting_status}
+            onChange={(e) => setForm({ ...form, meeting_status: e.target.value as MeetingStatus })}
+            options={MEETING_STATUSES}
+          />
+        </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Date & Time">
             <Input
