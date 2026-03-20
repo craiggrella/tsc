@@ -42,7 +42,7 @@ interface MaterialRow {
   materialId: string;
   personId: string;
   response: string;
-  date: string;
+  projectId: string;
 }
 
 const emptyForm = {
@@ -178,7 +178,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
               materialId: mat.id,
               personId: resp.person_id,
               response: resp.response || "",
-              date: submissionDate,
+              projectId: "",
             });
           }
         } else {
@@ -188,7 +188,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
             materialId: mat.id,
             personId: personIds.length === 1 ? personIds[0] : "",
             response: "",
-            date: submissionDate,
+            projectId: "",
           });
         }
       }
@@ -325,7 +325,9 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
   }
 
   function addMaterialRow() {
-    const autoPersonId = form.person_ids.length === 1 ? form.person_ids[0] : "";
+    // Auto-fill person if only 1 person currently in material rows
+    const currentPeople = [...new Set(materialRows.map((r) => r.personId).filter(Boolean))];
+    const autoPersonId = currentPeople.length === 1 ? currentPeople[0] : "";
     setMaterialRows((prev) => [
       ...prev,
       {
@@ -334,13 +336,12 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         materialId: "",
         personId: autoPersonId,
         response: "",
-        date: form.submission_date || todayDate(),
+        projectId: "",
       },
     ]);
   }
 
   function addPersonRow(materialId: string) {
-    // Find an existing row for this material to copy clientId/date
     const existing = materialRows.find((r) => r.materialId === materialId);
     setMaterialRows((prev) => [
       ...prev,
@@ -350,7 +351,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         materialId,
         personId: "",
         response: "",
-        date: existing?.date || form.submission_date || todayDate(),
+        projectId: existing?.projectId || "",
       },
     ]);
   }
@@ -382,13 +383,14 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      // Derive client_ids from materialRows
+      // Derive client_ids and person_ids from materialRows
       const clientIds = [...new Set(materialRows.map((r) => r.clientId).filter(Boolean))];
       const materialIds = [...new Set(materialRows.map((r) => r.materialId).filter(Boolean))];
+      const derivedPersonIds = [...new Set(materialRows.map((r) => r.personId).filter(Boolean))];
 
       // Auto-generate description from client names + people names
       const clientNames = clientIds.map((id) => allClients.find((c) => c.id === id)?.full_name).filter(Boolean);
-      const personNames = form.person_ids.map((id) => personOptions.find((p) => p.id === id)?.label).filter(Boolean);
+      const personNames = derivedPersonIds.map((id) => personOptions.find((p) => p.id === id)?.label || people.find((p) => p.id === id)?.full_name).filter(Boolean);
       const autoDesc = [clientNames.join(", "), personNames.join(", ")].filter(Boolean).join(" — ") || "Submission";
 
       const payload = {
@@ -417,10 +419,11 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
 
       if (clientIds.length > 0)
         await supabase.from("submission_clients").insert(clientIds.map((id) => ({ submission_id: submissionId, client_id: id })));
-      if (form.person_ids.length > 0)
-        await supabase.from("submission_people").insert(form.person_ids.map((id) => ({ submission_id: submissionId, person_id: id })));
-      if (form.project_ids.length > 0)
-        await supabase.from("submission_projects").insert(form.project_ids.map((id) => ({ submission_id: submissionId, project_id: id })));
+      if (derivedPersonIds.length > 0)
+        await supabase.from("submission_people").insert(derivedPersonIds.map((id) => ({ submission_id: submissionId, person_id: id })));
+      const derivedProjectIds = [...new Set(materialRows.map((r) => r.projectId).filter(Boolean))];
+      if (derivedProjectIds.length > 0)
+        await supabase.from("submission_projects").insert(derivedProjectIds.map((id) => ({ submission_id: submissionId, project_id: id })));
       if (materialIds.length > 0)
         await supabase.from("submission_materials").insert(materialIds.map((id) => ({ submission_id: submissionId, material_id: id })));
 
@@ -521,17 +524,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
 
       {/* Form */}
       <div className="space-y-5">
-        {/* 1. People (recipients) */}
-        <Field label="People">
-          <MultiRelationPicker
-            value={form.person_ids}
-            onChange={(ids) => setForm({ ...form, person_ids: ids })}
-            options={personOptions}
-            placeholder="Search people..."
-          />
-        </Field>
-
-        {/* 2. Status + Date + Reason — compact row */}
+        {/* 1. Status + Date + Reason — compact row */}
         <div className="grid grid-cols-3 gap-3">
           <Field label="Status">
             <Select
@@ -559,19 +552,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
           </Field>
         </div>
 
-        {/* 3. Projects */}
-        <Field label="Projects">
-          <MultiRelationPicker
-            value={form.project_ids}
-            onChange={(ids) => setForm({ ...form, project_ids: ids })}
-            options={projectOptions}
-            placeholder="Select projects..."
-            onAdd={createProject}
-            addLabel="Create project"
-          />
-        </Field>
-
-        {/* 4. Materials Submitted — THE MAIN TABLE */}
+        {/* 3. Materials Submitted — THE MAIN TABLE */}
         <Field label="Materials Submitted">
           <div className="space-y-3">
             <div className="overflow-x-auto rounded-md border border-zinc-200">
@@ -580,7 +561,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
                   <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
                     <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Client</th>
                     <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Material</th>
-                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Date</th>
+                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Project</th>
                     <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Person</th>
                     <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Response</th>
                     <th className="px-3 py-2 w-20"></th>
@@ -614,12 +595,16 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
                         </select>
                       </td>
                       <td className="px-3 py-2">
-                        <input
-                          type="date"
-                          value={row.date}
-                          onChange={(e) => updateRow(idx, { date: e.target.value })}
+                        <select
+                          value={row.projectId}
+                          onChange={(e) => updateRow(idx, { projectId: e.target.value })}
                           className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
-                        />
+                        >
+                          <option value="">—</option>
+                          {projectOptions.map((p) => (
+                            <option key={p.id} value={p.id}>{p.label}</option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1">
@@ -627,9 +612,9 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
                             <RelationPicker
                               value={row.personId || null}
                               onChange={(id) => handlePersonSelect(idx, id)}
-                              options={form.person_ids.map((pid) => ({
+                              options={[...new Set(materialRows.map((r) => r.personId).filter(Boolean))].map((pid) => ({
                                 id: pid,
-                                label: personOptions.find((p) => p.id === pid)?.label || "",
+                                label: personOptions.find((p) => p.id === pid)?.label || people.find((p) => p.id === pid)?.full_name || "",
                               }))}
                               onSearch={searchPeople}
                               onAdd={addNewPerson}
@@ -746,7 +731,10 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
                             <RelationPicker
                               value={mRow.personId || null}
                               onChange={(id) => updateMeetingRow(idx, { personId: id || "" })}
-                              options={form.person_ids.map(pid => ({ id: pid, label: personOptions.find(p => p.id === pid)?.label || "" }))}
+                              options={[...new Set(materialRows.map((r) => r.personId).filter(Boolean))].map((pid) => ({
+                                id: pid,
+                                label: personOptions.find((p) => p.id === pid)?.label || people.find((p) => p.id === pid)?.full_name || "",
+                              }))}
                               onSearch={searchPeople}
                               onAdd={addNewPerson}
                               addLabel="Add contact"
