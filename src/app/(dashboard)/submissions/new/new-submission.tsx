@@ -42,7 +42,7 @@ interface MaterialRow {
   materialId: string;
   personId: string;
   response: string;
-  date: string;
+  projectId: string;
 }
 
 const emptyForm = {
@@ -183,7 +183,7 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
         materialId: "",
         personId: autoPersonId,
         response: "",
-        date: form.submission_date || todayDate(),
+        projectId: "",
       },
     ]);
   }
@@ -198,7 +198,7 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
         materialId,
         personId: "",
         response: "",
-        date: existing?.date || form.submission_date || todayDate(),
+        projectId: existing?.projectId || "",
       },
     ]);
   }
@@ -223,13 +223,15 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      // Derive client_ids from materialRows
+      // Derive everything from materialRows
       const clientIds = [...new Set(materialRows.map((r) => r.clientId).filter(Boolean))];
       const materialIds = [...new Set(materialRows.map((r) => r.materialId).filter(Boolean))];
+      const derivedPersonIds = [...new Set(materialRows.map((r) => r.personId).filter(Boolean))];
+      const derivedProjectIds = [...new Set(materialRows.map((r) => r.projectId).filter(Boolean))];
 
-      // Auto-generate description from client names + people names
+      // Auto-generate description
       const clientNames = clientIds.map((id) => allClients.find((c) => c.id === id)?.full_name).filter(Boolean);
-      const personNames = form.person_ids.map((id) => personOptions.find((p) => p.id === id)?.label).filter(Boolean);
+      const personNames = derivedPersonIds.map((id) => personOptions.find((p) => p.id === id)?.label || people.find((p) => p.id === id)?.full_name).filter(Boolean);
       const autoDesc = [clientNames.join(", "), personNames.join(", ")].filter(Boolean).join(" — ") || "Submission";
 
       const payload = {
@@ -258,14 +260,14 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
                 clientIds.map((id) => ({ submission_id: subId, client_id: id }))
               )
             : Promise.resolve(),
-          form.person_ids.length > 0
+          derivedPersonIds.length > 0
             ? supabase.from("submission_people").insert(
-                form.person_ids.map((id) => ({ submission_id: subId, person_id: id }))
+                derivedPersonIds.map((id) => ({ submission_id: subId, person_id: id }))
               )
             : Promise.resolve(),
-          form.project_ids.length > 0
+          derivedProjectIds.length > 0
             ? supabase.from("submission_projects").insert(
-                form.project_ids.map((id) => ({ submission_id: subId, project_id: id }))
+                derivedProjectIds.map((id) => ({ submission_id: subId, project_id: id }))
               )
             : Promise.resolve(),
           materialIds.length > 0
@@ -275,13 +277,13 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
             : Promise.resolve(),
         ]);
 
-        // 3. Upsert material_responses for rows with both personId and response
+        // 3. Upsert material_responses for rows with personId (saves person assignment even without response)
         const responsesToInsert = materialRows
-          .filter((r) => r.materialId && r.personId && r.response)
+          .filter((r) => r.materialId && r.personId)
           .map((r) => ({
             material_id: r.materialId,
             person_id: r.personId,
-            response: r.response,
+            response: r.response || null,
           }));
         if (responsesToInsert.length > 0) {
           await supabase.from("material_responses").upsert(responsesToInsert, {
@@ -322,17 +324,7 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
 
       {/* Form */}
       <div className="space-y-5">
-        {/* 1. People (recipients) */}
-        <Field label="People">
-          <MultiRelationPicker
-            value={form.person_ids}
-            onChange={(ids) => setForm({ ...form, person_ids: ids })}
-            options={personOptions}
-            placeholder="Search people..."
-          />
-        </Field>
-
-        {/* 2. Status + Date + Reason — compact row */}
+        {/* 1. Status + Date + Reason — compact row */}
         <div className="grid grid-cols-3 gap-3">
           <Field label="Status">
             <Select
@@ -360,32 +352,7 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
           </Field>
         </div>
 
-        {/* 3. Projects */}
-        <Field label="Projects">
-          <MultiRelationPicker
-            value={form.project_ids}
-            onChange={(ids) => setForm({ ...form, project_ids: ids })}
-            options={projectOptions}
-            placeholder="Select projects..."
-            onAdd={createProject}
-            addLabel="Create project"
-          />
-        </Field>
-
-        {/* 4. Set Meeting checkbox */}
-        <Field label="Set Meeting">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={form.set_meeting}
-              onChange={(e) => setForm({ ...form, set_meeting: e.target.checked })}
-              className="accent-black"
-            />
-            <span className="text-sm text-zinc-600">Schedule a meeting</span>
-          </label>
-        </Field>
-
-        {/* 5. Materials Submitted — THE MAIN TABLE */}
+        {/* 2. Materials Submitted — THE MAIN TABLE */}
         <Field label="Materials Submitted">
           <div className="space-y-3">
             <div className="overflow-x-auto rounded-md border border-zinc-200">
@@ -394,7 +361,7 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
                   <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
                     <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Client</th>
                     <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Material</th>
-                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Date</th>
+                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Project</th>
                     <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Person</th>
                     <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Response</th>
                     <th className="px-3 py-2 w-20"></th>
@@ -428,12 +395,16 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
                         </select>
                       </td>
                       <td className="px-3 py-2">
-                        <input
-                          type="date"
-                          value={row.date}
-                          onChange={(e) => updateRow(idx, { date: e.target.value })}
+                        <select
+                          value={row.projectId}
+                          onChange={(e) => updateRow(idx, { projectId: e.target.value })}
                           className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
-                        />
+                        >
+                          <option value="">—</option>
+                          {projectOptions.map((p) => (
+                            <option key={p.id} value={p.id}>{p.label}</option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1">
