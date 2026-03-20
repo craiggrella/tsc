@@ -186,7 +186,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
             key: genKey(),
             clientId: mat.clientId,
             materialId: mat.id,
-            personId: personIds.length === 1 ? personIds[0] : "",
+            personId: "",
             response: "",
             projectId: "",
           });
@@ -356,11 +356,16 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
     ]);
   }
 
-  function handlePersonSelect(idx: number, personId: string | null) {
+  async function handlePersonSelect(idx: number, personId: string | null) {
     if (!personId) { updateRow(idx, { personId: "" }); return; }
     updateRow(idx, { personId });
-    if (!form.person_ids.includes(personId)) {
-      setForm((prev) => ({ ...prev, person_ids: [...prev.person_ids, personId] }));
+    // Immediately save this person assignment to material_responses so it persists on reload
+    const row = materialRows[idx];
+    if (row.materialId && personId) {
+      await supabase.from("material_responses").upsert(
+        { material_id: row.materialId, person_id: personId, response: row.response || null },
+        { onConflict: "material_id,person_id" }
+      );
     }
   }
 
