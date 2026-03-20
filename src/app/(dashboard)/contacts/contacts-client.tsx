@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Plus, Search, Contact } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Plus, Search, Contact, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatPhone } from "@/lib/utils";
+import type { BuyerType, PersonType, ExecLevel } from "@/types/database";
 
 interface CompanyData {
   id: string;
@@ -19,6 +20,7 @@ interface ContactRow {
   title: string | null;
   type: string | null;
   exec_level: string | null;
+  buyer_type: string | null;
   company_id: string | null;
   department: string[];
   assistant_id: string | null;
@@ -27,6 +29,36 @@ interface ContactRow {
   company: CompanyData | null;
 }
 
+const BUYER_TYPES: { value: BuyerType; label: string }[] = [
+  { value: "Pod", label: "Pod" },
+  { value: "Studio", label: "Studio" },
+  { value: "Network", label: "Network" },
+  { value: "Streamer", label: "Streamer" },
+  { value: "Production Company", label: "Production Co." },
+  { value: "Other", label: "Other" },
+];
+
+const PERSON_TYPES: { value: PersonType; label: string }[] = [
+  { value: "contact", label: "Contact" },
+  { value: "potential_client", label: "Potential Client" },
+  { value: "vendor", label: "Vendor" },
+  { value: "assistant", label: "Assistant" },
+  { value: "executive", label: "Executive" },
+];
+
+const EXEC_LEVELS: { value: ExecLevel; label: string }[] = [
+  { value: "intern", label: "Intern" },
+  { value: "assistant", label: "Assistant" },
+  { value: "coordinator", label: "Coordinator" },
+  { value: "manager", label: "Manager" },
+  { value: "director", label: "Director" },
+  { value: "vice_president", label: "VP" },
+  { value: "senior_vice_president", label: "SVP" },
+  { value: "executive_vice_president", label: "EVP" },
+  { value: "president", label: "President" },
+  { value: "chair", label: "Chair" },
+];
+
 interface ContactsClientProps {
   userId: string;
 }
@@ -34,29 +66,109 @@ interface ContactsClientProps {
 export function ContactsClient({ userId }: ContactsClientProps) {
   const supabase = createClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [search, setSearch] = useState("");
   const searchTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // Multi-select filter state
+  const [buyerTypeFilter, setBuyerTypeFilter] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [levelFilter, setLevelFilter] = useState<string[]>([]);
+
   // Table display: primary/first phone and email per contact
   const [tablePhones, setTablePhones] = useState<Record<string, string>>({});
   const [tableEmails, setTableEmails] = useState<Record<string, string>>({});
 
+  // Read URL params on mount
   useEffect(() => {
-    async function load() {
-      const { data: contactsData, count } = await supabase
-        .from("people")
-        .select("*, company:companies!company_id(id, name)", { count: "exact" })
-        .order("full_name")
-        .range(0, 49);
-      setContacts(contactsData || []);
-      setTotalCount(count || 0);
-      setLoading(false);
-    }
-    load();
+    const bt = searchParams.get("buyer_type");
+    const ct = searchParams.get("type");
+    const lv = searchParams.get("level");
+    if (bt) setBuyerTypeFilter(bt.split(","));
+    if (ct) setTypeFilter(ct.split(","));
+    if (lv) setLevelFilter(lv.split(","));
   }, []);
+
+  // Build and execute query with filters
+  function buildQuery(searchValue?: string) {
+    let query = supabase
+      .from("people")
+      .select("*, company:companies!company_id(id, name)", { count: "exact" });
+
+    if (buyerTypeFilter.length > 0) query = query.in("buyer_type", buyerTypeFilter);
+    if (typeFilter.length > 0) query = query.in("type", typeFilter);
+    if (levelFilter.length > 0) query = query.in("exec_level", levelFilter);
+
+    if (searchValue && searchValue.trim()) {
+      query = query.ilike("full_name", `%${searchValue}%`);
+    }
+
+    return query.order("full_name").range(0, 49);
+  }
+
+  async function fetchContacts(searchValue?: string) {
+    const { data, count } = await buildQuery(searchValue);
+    setContacts((data || []) as ContactRow[]);
+    setTotalCount(count || 0);
+
+    // If searching by name didn't find much, also search by company name
+    if (searchValue && searchValue.trim()) {
+      const { data: matchingCompanies } = await supabase
+        .from("companies")
+        .select("id")
+        .ilike("name", `%${searchValue}%`)
+        .limit(20);
+
+      if (matchingCompanies && matchingCompanies.length > 0) {
+        const companyIds = matchingCompanies.map((c) => c.id);
+        let companyQuery = supabase
+          .from("people")
+          .select("*, company:companies!company_id(id, name)")
+          .in("company_id", companyIds);
+
+        if (buyerTypeFilter.length > 0) companyQuery = companyQuery.in("buyer_type", buyerTypeFilter);
+        if (typeFilter.length > 0) companyQuery = companyQuery.in("type", typeFilter);
+        if (levelFilter.length > 0) companyQuery = companyQuery.in("exec_level", levelFilter);
+
+        const { data: byCompany } = await companyQuery.order("full_name").limit(50);
+
+        const nameResults = (data || []) as ContactRow[];
+        const seen = new Set(nameResults.map((c) => c.id));
+        const merged = [...nameResults, ...((byCompany || []) as ContactRow[]).filter((c) => !seen.has(c.id))];
+        setContacts(merged);
+      }
+    }
+  }
+
+  // Initial load — wait for URL params to be parsed
+  const initialLoaded = useRef(false);
+  useEffect(() => {
+    // Skip first render, wait for URL params
+    if (!initialLoaded.current) {
+      initialLoaded.current = true;
+      // Small delay to let URL param useEffect run first
+      const timer = setTimeout(() => {
+        fetchContacts().then(() => setLoading(false));
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  // Re-fetch when filters change (after initial load)
+  const filtersInitialized = useRef(false);
+  useEffect(() => {
+    if (!initialLoaded.current) return;
+    if (!filtersInitialized.current) {
+      filtersInitialized.current = true;
+      // This is the first filter state set (from URL params or default)
+      fetchContacts(search).then(() => setLoading(false));
+      return;
+    }
+    fetchContacts(search);
+  }, [buyerTypeFilter, typeFilter, levelFilter]);
 
   // Fetch primary/first phone and email for contacts in the table
   useEffect(() => {
@@ -90,56 +202,35 @@ export function ContactsClient({ userId }: ContactsClientProps) {
     });
   }, [contacts, supabase]);
 
+  function toggleFilter(category: "buyer" | "type" | "level", value: string) {
+    if (category === "buyer") {
+      setBuyerTypeFilter((prev) =>
+        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+      );
+    } else if (category === "type") {
+      setTypeFilter((prev) =>
+        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+      );
+    } else {
+      setLevelFilter((prev) =>
+        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+      );
+    }
+  }
+
   function handleSearchChange(value: string) {
     setSearch(value);
     clearTimeout(searchTimeout.current);
     if (!value.trim()) {
-      supabase
-        .from("people")
-        .select("*, company:companies!company_id(id, name)", { count: "exact" })
-        .order("full_name")
-        .range(0, 49)
-        .then(({ data, count }) => {
-          if (data) setContacts(data as ContactRow[]);
-          setTotalCount(count || 0);
-        });
+      fetchContacts();
       return;
     }
-    searchTimeout.current = setTimeout(async () => {
-      // Search by person name
-      const { data: byName } = await supabase
-        .from("people")
-        .select("*, company:companies!company_id(id, name)")
-        .ilike("full_name", `%${value}%`)
-        .order("full_name")
-        .limit(50);
-
-      // Search by company name — find company IDs, then find people at those companies
-      const { data: matchingCompanies } = await supabase
-        .from("companies")
-        .select("id")
-        .ilike("name", `%${value}%`)
-        .limit(20);
-
-      let byCompany: ContactRow[] = [];
-      if (matchingCompanies && matchingCompanies.length > 0) {
-        const companyIds = matchingCompanies.map((c) => c.id);
-        const { data } = await supabase
-          .from("people")
-          .select("*, company:companies!company_id(id, name)")
-          .in("company_id", companyIds)
-          .order("full_name")
-          .limit(50);
-        byCompany = (data || []) as ContactRow[];
-      }
-
-      // Merge and dedupe
-      const nameResults = (byName || []) as ContactRow[];
-      const seen = new Set(nameResults.map((c) => c.id));
-      const merged = [...nameResults, ...byCompany.filter((c) => !seen.has(c.id))];
-      setContacts(merged);
+    searchTimeout.current = setTimeout(() => {
+      fetchContacts(value);
     }, 250);
   }
+
+  const activeFilterCount = buyerTypeFilter.length + typeFilter.length + levelFilter.length;
 
   if (loading) return <div className="flex items-center justify-center py-20"><p className="text-sm text-zinc-400">Loading...</p></div>;
 
@@ -172,7 +263,82 @@ export function ContactsClient({ userId }: ContactsClientProps) {
         </div>
         <span className="text-xs text-zinc-400">
           {totalCount.toLocaleString()} contact{totalCount !== 1 ? "s" : ""}
+          {activeFilterCount > 0 && (
+            <span className="ml-1 text-amber-600">({activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""})</span>
+          )}
         </span>
+      </div>
+
+      {/* Filter pills */}
+      <div className="mt-3 space-y-2">
+        {/* Buyer Type */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] text-zinc-400 mr-1 w-10 shrink-0">Buyer</span>
+          {BUYER_TYPES.map((bt) => (
+            <button
+              key={bt.value}
+              onClick={() => toggleFilter("buyer", bt.value)}
+              className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                buyerTypeFilter.includes(bt.value)
+                  ? "border-amber-300 bg-amber-50 text-amber-700"
+                  : "border-zinc-200 text-zinc-500 hover:border-zinc-300"
+              }`}
+            >
+              {bt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Contact Type */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] text-zinc-400 mr-1 w-10 shrink-0">Type</span>
+          {PERSON_TYPES.map((pt) => (
+            <button
+              key={pt.value}
+              onClick={() => toggleFilter("type", pt.value)}
+              className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                typeFilter.includes(pt.value)
+                  ? "border-blue-300 bg-blue-50 text-blue-700"
+                  : "border-zinc-200 text-zinc-500 hover:border-zinc-300"
+              }`}
+            >
+              {pt.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Level */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] text-zinc-400 mr-1 w-10 shrink-0">Level</span>
+          {EXEC_LEVELS.map((el) => (
+            <button
+              key={el.value}
+              onClick={() => toggleFilter("level", el.value)}
+              className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                levelFilter.includes(el.value)
+                  ? "border-purple-300 bg-purple-50 text-purple-700"
+                  : "border-zinc-200 text-zinc-500 hover:border-zinc-300"
+              }`}
+            >
+              {el.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Clear all filters */}
+        {activeFilterCount > 0 && (
+          <button
+            onClick={() => {
+              setBuyerTypeFilter([]);
+              setTypeFilter([]);
+              setLevelFilter([]);
+            }}
+            className="inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-black transition-colors"
+          >
+            <X className="h-3 w-3" />
+            Clear all filters
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -193,7 +359,7 @@ export function ContactsClient({ userId }: ContactsClientProps) {
               <tr>
                 <td colSpan={6} className="px-3 py-12 text-center text-sm text-zinc-400">
                   <Contact className="mx-auto mb-2 h-8 w-8 text-zinc-300" />
-                  {search ? "No contacts match your search." : "No contacts found."}
+                  {search || activeFilterCount > 0 ? "No contacts match your search." : "No contacts found."}
                 </td>
               </tr>
             ) : (
