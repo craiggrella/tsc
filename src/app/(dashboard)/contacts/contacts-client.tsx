@@ -106,13 +106,38 @@ export function ContactsClient({ userId }: ContactsClientProps) {
       return;
     }
     searchTimeout.current = setTimeout(async () => {
-      const { data } = await supabase
+      // Search by person name
+      const { data: byName } = await supabase
         .from("people")
         .select("*, company:companies!company_id(id, name)")
         .ilike("full_name", `%${value}%`)
         .order("full_name")
         .limit(50);
-      if (data) setContacts(data as ContactRow[]);
+
+      // Search by company name — find company IDs, then find people at those companies
+      const { data: matchingCompanies } = await supabase
+        .from("companies")
+        .select("id")
+        .ilike("name", `%${value}%`)
+        .limit(20);
+
+      let byCompany: ContactRow[] = [];
+      if (matchingCompanies && matchingCompanies.length > 0) {
+        const companyIds = matchingCompanies.map((c) => c.id);
+        const { data } = await supabase
+          .from("people")
+          .select("*, company:companies!company_id(id, name)")
+          .in("company_id", companyIds)
+          .order("full_name")
+          .limit(50);
+        byCompany = (data || []) as ContactRow[];
+      }
+
+      // Merge and dedupe
+      const nameResults = (byName || []) as ContactRow[];
+      const seen = new Set(nameResults.map((c) => c.id));
+      const merged = [...nameResults, ...byCompany.filter((c) => !seen.has(c.id))];
+      setContacts(merged);
     }, 250);
   }
 
