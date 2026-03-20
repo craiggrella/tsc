@@ -282,22 +282,13 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         <h1 className="text-xl font-semibold tracking-tight text-black">
           {form.description || "Untitled Submission"}
         </h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleDelete}
-            disabled={deleting}
-            className="rounded-md border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
-          >
-            {deleting ? "Deleting..." : "Delete"}
-          </button>
-          <button
+        <button
             onClick={handleSave}
             disabled={saving}
             className="rounded-md bg-black px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
           >
             {saving ? "Saving..." : saved ? "Saved \u2713" : "Save"}
           </button>
-        </div>
       </div>
 
       {/* Form */}
@@ -498,6 +489,17 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         <Field label="Notes">
           <Textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value || null })} placeholder="Notes..." />
         </Field>
+      </div>
+      {/* Danger Zone */}
+      <div className="mt-12 border-t border-zinc-200 pt-6">
+        <p className="text-xs text-zinc-400 mb-3">Danger Zone</p>
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          className="rounded-md border border-red-200 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+        >
+          {deleting ? "Deleting..." : "Delete this submission"}
+        </button>
       </div>
     </div>
   );
