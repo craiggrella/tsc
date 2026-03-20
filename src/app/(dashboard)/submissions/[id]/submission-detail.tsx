@@ -84,7 +84,8 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
   interface SubmissionMeetingRow {
     key: string;
     clientId: string;
-    personId: string;
+    personIds: string[];
+    projectIds: string[];
     meetingId: string | null;
     status: string;
   }
@@ -215,12 +216,14 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
           .in("id", meetingIds);
         const { data: mc } = await supabase.from("meeting_clients").select("meeting_id, client_id").in("meeting_id", meetingIds);
         const { data: mp } = await supabase.from("meeting_people").select("meeting_id, person_id").in("meeting_id", meetingIds);
+        const { data: mpr } = await supabase.from("meeting_projects").select("meeting_id, project_id").in("meeting_id", meetingIds);
 
         const mtgRows: SubmissionMeetingRow[] = [];
         for (const m of meetings || []) {
           const clientId = mc?.find(c => c.meeting_id === m.id)?.client_id || "";
-          const personId = mp?.find(p => p.meeting_id === m.id)?.person_id || "";
-          mtgRows.push({ key: genKey(), clientId, personId, meetingId: m.id, status: m.meeting_status });
+          const personIds = (mp || []).filter(p => p.meeting_id === m.id).map(p => p.person_id);
+          const projectIds = (mpr || []).filter(p => p.meeting_id === m.id).map(p => p.project_id);
+          mtgRows.push({ key: genKey(), clientId, personIds, projectIds, meetingId: m.id, status: m.meeting_status });
         }
         setMeetingRows(mtgRows);
       }
@@ -295,7 +298,10 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
   }, [supabase]);
 
   function addMeetingRow() {
-    setMeetingRows(prev => [...prev, { key: genKey(), clientId: "", personId: "", meetingId: null, status: "need_to_set" }]);
+    // Auto-fill project from material rows if there's one
+    const matProjects = [...new Set(materialRows.map((r) => r.projectId).filter(Boolean))];
+    const autoProject = matProjects.length === 1 ? matProjects[0] : "";
+    setMeetingRows(prev => [...prev, { key: genKey(), clientId: "", personIds: [], projectIds: autoProject ? [autoProject] : [], meetingId: null, status: "need_to_set" }]);
   }
 
   function updateMeetingRow(idx: number, patch: Partial<SubmissionMeetingRow>) {
@@ -446,11 +452,11 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
       // Save new meetings
       for (const mRow of meetingRows) {
         if (mRow.meetingId) continue;
-        if (!mRow.clientId || !mRow.personId) continue;
+        if (!mRow.clientId || mRow.personIds.length === 0) continue;
 
         const clientName = allClients.find(c => c.id === mRow.clientId)?.full_name || "";
-        const personName = people.find(p => p.id === mRow.personId)?.full_name || personOptions.find(p => p.id === mRow.personId)?.label || "";
-        const title = `${clientName} — ${personName}`;
+        const personNames = mRow.personIds.map(pid => people.find(p => p.id === pid)?.full_name || personOptions.find(p => p.id === pid)?.label || "").filter(Boolean);
+        const title = `${clientName} — ${personNames.join(", ")}`;
 
         const { data: newMeeting } = await supabase
           .from("meetings")
@@ -459,11 +465,14 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
           .single();
 
         if (newMeeting) {
-          await Promise.all([
-            supabase.from("meeting_clients").insert({ meeting_id: newMeeting.id, client_id: mRow.clientId }),
-            supabase.from("meeting_people").insert({ meeting_id: newMeeting.id, person_id: mRow.personId }),
-            supabase.from("submission_meetings").insert({ submission_id: submissionId, meeting_id: newMeeting.id }),
-          ]);
+          await supabase.from("meeting_clients").insert({ meeting_id: newMeeting.id, client_id: mRow.clientId });
+          await supabase.from("submission_meetings").insert({ submission_id: submissionId, meeting_id: newMeeting.id });
+          if (mRow.personIds.length > 0) {
+            await supabase.from("meeting_people").insert(mRow.personIds.map(pid => ({ meeting_id: newMeeting.id, person_id: pid })));
+          }
+          if (mRow.projectIds.length > 0) {
+            await supabase.from("meeting_projects").insert(mRow.projectIds.map(pid => ({ meeting_id: newMeeting.id, project_id: pid })));
+          }
           mRow.meetingId = newMeeting.id;
         }
       }
@@ -705,6 +714,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
                   <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
                     <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Client</th>
                     <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Meeting With</th>
+                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Project</th>
                     <th className="px-3 py-2 font-medium text-zinc-500 text-xs w-24">Status</th>
                     <th className="px-3 py-2 w-8"></th>
                   </tr>
@@ -731,37 +741,33 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
                           </select>
                         )}
                       </td>
-                      <td className="px-3 py-2">
-                        {mRow.meetingId ? (
-                          <span className="text-xs text-zinc-700">{people.find(p => p.id === mRow.personId)?.full_name || personOptions.find(p => p.id === mRow.personId)?.label || "—"}</span>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <select
-                              value={mRow.personId}
-                              onChange={(e) => updateMeetingRow(idx, { personId: e.target.value })}
-                              className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs outline-none"
-                            >
-                              <option value="">Select person...</option>
-                              {/* People from material rows first */}
-                              {[...new Set(materialRows.map((r) => r.personId).filter(Boolean))].map((pid) => {
-                                const name = personOptions.find((p) => p.id === pid)?.label || people.find((p) => p.id === pid)?.full_name;
-                                return name ? <option key={pid} value={pid}>{name}</option> : null;
-                              })}
-                              <option disabled>──────────</option>
-                              {/* All other people */}
-                              {people
-                                .filter((p) => !materialRows.some((r) => r.personId === p.id))
-                                .map((p) => (
-                                  <option key={p.id} value={p.id}>{p.full_name}</option>
-                                ))}
-                            </select>
-                            {mRow.personId && (
-                              <Link href={`/contacts/${mRow.personId}`} className="shrink-0 text-zinc-400 hover:text-black transition-colors" title="View contact">
-                                <ExternalLink className="h-3 w-3" />
-                              </Link>
-                            )}
-                          </div>
-                        )}
+                      <td className="px-3 py-2 min-w-[180px]">
+                        <MultiRelationPicker
+                          value={mRow.personIds}
+                          onChange={(ids) => updateMeetingRow(idx, { personIds: ids })}
+                          options={[
+                            // People from material rows first
+                            ...[...new Set(materialRows.map((r) => r.personId).filter(Boolean))].map((pid) => ({
+                              id: pid,
+                              label: personOptions.find((p) => p.id === pid)?.label || people.find((p) => p.id === pid)?.full_name || "",
+                            })),
+                            // Then all other people
+                            ...people
+                              .filter((p) => !materialRows.some((r) => r.personId === p.id))
+                              .map((p) => ({ id: p.id, label: p.full_name })),
+                          ]}
+                          placeholder="Select people..."
+                        />
+                      </td>
+                      <td className="px-3 py-2 min-w-[150px]">
+                        <MultiRelationPicker
+                          value={mRow.projectIds}
+                          onChange={(ids) => updateMeetingRow(idx, { projectIds: ids })}
+                          options={projectOptions}
+                          placeholder="Select projects..."
+                          onAdd={createProject}
+                          addLabel="Create project"
+                        />
                       </td>
                       <td className="px-3 py-2">
                         <select
