@@ -446,7 +446,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
 
         const { data: newMeeting } = await supabase
           .from("meetings")
-          .insert({ title, meeting_status: "need_to_set" })
+          .insert({ title, meeting_status: mRow.status || "need_to_set" })
           .select("id")
           .single();
 
@@ -727,27 +727,46 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
                         {mRow.meetingId ? (
                           <span className="text-xs text-zinc-700">{people.find(p => p.id === mRow.personId)?.full_name || personOptions.find(p => p.id === mRow.personId)?.label || "—"}</span>
                         ) : (
-                          <div className="min-w-[140px]">
-                            <RelationPicker
-                              value={mRow.personId || null}
-                              onChange={(id) => updateMeetingRow(idx, { personId: id || "" })}
-                              options={[...new Set(materialRows.map((r) => r.personId).filter(Boolean))].map((pid) => ({
-                                id: pid,
-                                label: personOptions.find((p) => p.id === pid)?.label || people.find((p) => p.id === pid)?.full_name || "",
-                              }))}
-                              onSearch={searchPeople}
-                              onAdd={addNewPerson}
-                              addLabel="Add contact"
-                              selectedLabel={mRow.personId ? (personOptions.find(p => p.id === mRow.personId)?.label || people.find(p => p.id === mRow.personId)?.full_name) : undefined}
-                              placeholder="Search people..."
-                            />
+                          <div className="flex items-center gap-1">
+                            <select
+                              value={mRow.personId}
+                              onChange={(e) => updateMeetingRow(idx, { personId: e.target.value })}
+                              className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs outline-none"
+                            >
+                              <option value="">Select person...</option>
+                              {/* People from material rows first */}
+                              {[...new Set(materialRows.map((r) => r.personId).filter(Boolean))].map((pid) => {
+                                const name = personOptions.find((p) => p.id === pid)?.label || people.find((p) => p.id === pid)?.full_name;
+                                return name ? <option key={pid} value={pid}>{name}</option> : null;
+                              })}
+                              <option disabled>──────────</option>
+                              {/* All other people */}
+                              {people
+                                .filter((p) => !materialRows.some((r) => r.personId === p.id))
+                                .map((p) => (
+                                  <option key={p.id} value={p.id}>{p.full_name}</option>
+                                ))}
+                            </select>
+                            {mRow.personId && (
+                              <Link href={`/contacts/${mRow.personId}`} className="shrink-0 text-zinc-400 hover:text-black transition-colors" title="View contact">
+                                <ExternalLink className="h-3 w-3" />
+                              </Link>
+                            )}
                           </div>
                         )}
                       </td>
                       <td className="px-3 py-2">
-                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                          {mRow.meetingId ? mRow.status.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "To Set"}
-                        </span>
+                        <select
+                          value={mRow.status}
+                          onChange={(e) => updateMeetingRow(idx, { status: e.target.value })}
+                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
+                        >
+                          <option value="need_to_set">To Set</option>
+                          <option value="scheduled">Scheduled</option>
+                          <option value="completed">Completed</option>
+                          <option value="cancelled">Cancelled</option>
+                          <option value="need_to_reschedule">Reschedule</option>
+                        </select>
                       </td>
                       <td className="px-3 py-2">
                         <button onClick={() => removeMeetingRow(idx)} className="text-zinc-400 hover:text-red-500 transition-colors">✕</button>
