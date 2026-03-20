@@ -14,6 +14,7 @@ import {
   FolderOpen,
   Clapperboard,
   FileText,
+  Building2,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -25,6 +26,7 @@ const navItems = [
   { label: "Submissions", href: "/submissions", icon: Send },
   { label: "Clients", href: "/clients", icon: Users },
   { label: "Contacts", href: "/contacts", icon: Contact },
+  { label: "Companies", href: "/companies", icon: Building2 },
   { label: "Projects", href: "/projects", icon: Clapperboard },
   { label: "Client Material", href: "/materials", icon: FileText },
   { label: "Files", href: "/files", icon: FolderOpen },

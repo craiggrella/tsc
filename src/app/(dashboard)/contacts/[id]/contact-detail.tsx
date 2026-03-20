@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -520,22 +520,37 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
               />
             </Field>
           </div>
-          <Field label="Company">
-            <RelationPicker
-              value={form.company_id}
-              onChange={(id) => setForm({ ...form, company_id: id })}
-              options={companyOptions}
-              placeholder="Select company..."
-            />
-          </Field>
-          <Field label="Title">
-            <Input
-              value={form.title || ""}
-              onChange={(e) => setForm({ ...form, title: e.target.value || null })}
-              placeholder="Job title"
-            />
-          </Field>
           <div className="grid grid-cols-2 gap-4">
+            <Field label="Company">
+              <div className="flex items-center gap-1.5">
+                <div className="flex-1">
+                  <RelationPicker
+                    value={form.company_id}
+                    onChange={(id) => setForm({ ...form, company_id: id })}
+                    options={companyOptions}
+                    placeholder="Select company..."
+                  />
+                </div>
+                {form.company_id && (
+                  <Link
+                    href={`/companies/${form.company_id}`}
+                    className="shrink-0 rounded p-1 text-zinc-400 hover:text-black hover:bg-zinc-100 transition-colors"
+                    title="View company"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Link>
+                )}
+              </div>
+            </Field>
+            <Field label="Title">
+              <Input
+                value={form.title || ""}
+                onChange={(e) => setForm({ ...form, title: e.target.value || null })}
+                placeholder="Job title"
+              />
+            </Field>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
             <Field label="Type">
               <Select
                 value={form.type || ""}
@@ -552,15 +567,15 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
                 placeholder="Select..."
               />
             </Field>
+            <Field label="Buyer Type">
+              <Select
+                value={form.buyer_type || ""}
+                onChange={(e) => setForm({ ...form, buyer_type: (e.target.value || null) as BuyerType | null })}
+                options={BUYER_TYPES}
+                placeholder="Not a buyer"
+              />
+            </Field>
           </div>
-          <Field label="Buyer Type">
-            <Select
-              value={form.buyer_type || ""}
-              onChange={(e) => setForm({ ...form, buyer_type: (e.target.value || null) as BuyerType | null })}
-              options={BUYER_TYPES}
-              placeholder="Not a buyer"
-            />
-          </Field>
 
           <PhoneSection phones={phones} onChange={setPhones} />
           <EmailSection emails={emails} onChange={setEmails} />

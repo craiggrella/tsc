@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus, Search, Contact, X } from "lucide-react";
+import { Plus, Search, Contact, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatPhone } from "@/lib/utils";
 import type { BuyerType, PersonType, ExecLevel } from "@/types/database";
@@ -58,6 +58,83 @@ const EXEC_LEVELS: { value: ExecLevel; label: string }[] = [
   { value: "president", label: "President" },
   { value: "chair", label: "Chair" },
 ];
+
+function MultiFilterDropdown({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  selected: string[];
+  onChange: (values: string[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const display =
+    selected.length === 0
+      ? `${label}: All`
+      : `${label}: ${selected.length}`;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:border-zinc-300 transition-colors"
+      >
+        {display} <span className="ml-1 text-zinc-400">&#9662;</span>
+      </button>
+      {open && (
+        <div className="absolute z-50 mt-1 w-48 rounded-md border border-zinc-200 bg-white shadow-lg py-1">
+          <button
+            onClick={() => onChange([])}
+            className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-zinc-50 ${
+              selected.length === 0 ? "text-black font-medium" : "text-zinc-500"
+            }`}
+          >
+            All
+          </button>
+          {options.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => {
+                onChange(
+                  selected.includes(opt.value)
+                    ? selected.filter((v) => v !== opt.value)
+                    : [...selected, opt.value]
+                );
+              }}
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-zinc-50"
+            >
+              <div
+                className={`h-3.5 w-3.5 rounded border ${
+                  selected.includes(opt.value)
+                    ? "border-black bg-black"
+                    : "border-zinc-300"
+                } flex items-center justify-center`}
+              >
+                {selected.includes(opt.value) && (
+                  <Check className="h-2.5 w-2.5 text-white" />
+                )}
+              </div>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface ContactsClientProps {
   userId: string;
@@ -202,22 +279,6 @@ export function ContactsClient({ userId }: ContactsClientProps) {
     });
   }, [contacts, supabase]);
 
-  function toggleFilter(category: "buyer" | "type" | "level", value: string) {
-    if (category === "buyer") {
-      setBuyerTypeFilter((prev) =>
-        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
-      );
-    } else if (category === "type") {
-      setTypeFilter((prev) =>
-        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
-      );
-    } else {
-      setLevelFilter((prev) =>
-        prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
-      );
-    }
-  }
-
   function handleSearchChange(value: string) {
     setSearch(value);
     clearTimeout(searchTimeout.current);
@@ -269,74 +330,17 @@ export function ContactsClient({ userId }: ContactsClientProps) {
         </span>
       </div>
 
-      {/* Filter pills */}
-      <div className="mt-3 space-y-2">
-        {/* Buyer Type */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] text-zinc-400 mr-1 w-10 shrink-0">Buyer</span>
-          {BUYER_TYPES.map((bt) => (
-            <button
-              key={bt.value}
-              onClick={() => toggleFilter("buyer", bt.value)}
-              className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                buyerTypeFilter.includes(bt.value)
-                  ? "border-amber-300 bg-amber-50 text-amber-700"
-                  : "border-zinc-200 text-zinc-500 hover:border-zinc-300"
-              }`}
-            >
-              {bt.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Contact Type */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] text-zinc-400 mr-1 w-10 shrink-0">Type</span>
-          {PERSON_TYPES.map((pt) => (
-            <button
-              key={pt.value}
-              onClick={() => toggleFilter("type", pt.value)}
-              className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                typeFilter.includes(pt.value)
-                  ? "border-blue-300 bg-blue-50 text-blue-700"
-                  : "border-zinc-200 text-zinc-500 hover:border-zinc-300"
-              }`}
-            >
-              {pt.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Level */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[10px] text-zinc-400 mr-1 w-10 shrink-0">Level</span>
-          {EXEC_LEVELS.map((el) => (
-            <button
-              key={el.value}
-              onClick={() => toggleFilter("level", el.value)}
-              className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                levelFilter.includes(el.value)
-                  ? "border-purple-300 bg-purple-50 text-purple-700"
-                  : "border-zinc-200 text-zinc-500 hover:border-zinc-300"
-              }`}
-            >
-              {el.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Clear all filters */}
+      {/* Filter dropdowns */}
+      <div className="mt-3 flex items-center gap-2">
+        <MultiFilterDropdown label="Buyer" options={BUYER_TYPES} selected={buyerTypeFilter} onChange={setBuyerTypeFilter} />
+        <MultiFilterDropdown label="Type" options={PERSON_TYPES} selected={typeFilter} onChange={setTypeFilter} />
+        <MultiFilterDropdown label="Level" options={EXEC_LEVELS} selected={levelFilter} onChange={setLevelFilter} />
         {activeFilterCount > 0 && (
           <button
-            onClick={() => {
-              setBuyerTypeFilter([]);
-              setTypeFilter([]);
-              setLevelFilter([]);
-            }}
-            className="inline-flex items-center gap-1 text-[11px] text-zinc-500 hover:text-black transition-colors"
+            onClick={() => { setBuyerTypeFilter([]); setTypeFilter([]); setLevelFilter([]); }}
+            className="text-[11px] text-zinc-400 hover:text-black"
           >
-            <X className="h-3 w-3" />
-            Clear all filters
+            Clear
           </button>
         )}
       </div>
