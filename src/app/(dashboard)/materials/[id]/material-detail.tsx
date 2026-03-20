@@ -115,6 +115,7 @@ interface ReaderRow {
   company_name: string | null;
   buyer_type: string | null;
   response: string | null;
+  project_name: string | null;
 }
 
 interface MaterialDetailProps {
@@ -137,8 +138,8 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const [previewFileName, setPreviewFileName] = useState("");
 
-  // Readers
-  const [readers, setReaders] = useState<ReaderRow[]>([]);
+  // Submissions
+  const [readers, setSubmissions] = useState<ReaderRow[]>([]);
   const [responseFilter, setResponseFilter] = useState<string>("");
 
   useEffect(() => {
@@ -182,6 +183,41 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
         .select("person_id, response, person:people!person_id(id, full_name, buyer_type, company:companies!company_id(name))")
         .eq("material_id", materialId);
 
+      // Get submissions that include this material + their projects and people
+      const { data: subMats } = await supabase
+        .from("submission_materials")
+        .select("submission_id")
+        .eq("material_id", materialId);
+      const subIds = (subMats || []).map((s) => s.submission_id);
+
+      // Build a map: person_id → project names from submissions
+      const personProjectMap = new Map<string, string>();
+      if (subIds.length > 0) {
+        // Get projects per submission
+        const { data: subProjects } = await supabase
+          .from("submission_projects")
+          .select("submission_id, project:projects(name)")
+          .in("submission_id", subIds);
+        const subProjectMap = new Map<string, string>();
+        for (const row of subProjects || []) {
+          const r = row as unknown as { submission_id: string; project: { name: string } | null };
+          if (r.project) subProjectMap.set(r.submission_id, r.project.name);
+        }
+
+        // Get people per submission and map to projects
+        const { data: subPeople } = await supabase
+          .from("submission_people")
+          .select("submission_id, person_id")
+          .in("submission_id", subIds);
+        for (const sp of subPeople || []) {
+          const proj = subProjectMap.get(sp.submission_id);
+          if (proj && !personProjectMap.has(sp.person_id)) {
+            personProjectMap.set(sp.person_id, proj);
+          }
+        }
+      }
+
+      // Build reader map from material_responses
       const readerMap = new Map<string, ReaderRow>();
       for (const row of responsesData || []) {
         const person = (row as Record<string, unknown>).person as {
@@ -197,24 +233,19 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
             company_name: person.company?.name || null,
             buyer_type: person.buyer_type,
             response: row.response,
+            project_name: personProjectMap.get(person.id) || null,
           });
         }
       }
 
-      // Also load people who received this material via submissions but have no response
-      const { data: subMats } = await supabase
-        .from("submission_materials")
-        .select("submission_id")
-        .eq("material_id", materialId);
-
-      const subIds = (subMats || []).map((s) => s.submission_id);
+      // Also load people from submissions who have no response yet
       if (subIds.length > 0) {
-        const { data: subPeople } = await supabase
+        const { data: subPeopleAll } = await supabase
           .from("submission_people")
           .select("person:people!person_id(id, full_name, buyer_type, company:companies!company_id(name))")
           .in("submission_id", subIds);
 
-        for (const row of subPeople || []) {
+        for (const row of subPeopleAll || []) {
           const person = (row as Record<string, unknown>).person as {
             id: string;
             full_name: string;
@@ -228,12 +259,13 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
               company_name: person.company?.name || null,
               buyer_type: person.buyer_type,
               response: null,
+              project_name: personProjectMap.get(person.id) || null,
             });
           }
         }
       }
 
-      setReaders(
+      setSubmissions(
         Array.from(readerMap.values()).sort((a, b) => a.full_name.localeCompare(b.full_name))
       );
 
@@ -247,7 +279,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
     [clients]
   );
 
-  const filteredReaders = useMemo(() => {
+  const filteredSubmissions = useMemo(() => {
     if (!responseFilter) return readers;
     if (responseFilter === "no_response") return readers.filter((r) => !r.response);
     return readers.filter((r) => r.response === responseFilter);
@@ -445,11 +477,11 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
         </Field>
       </div>
 
-      {/* Readers Section */}
+      {/* Submissions Section */}
       <div className="mt-10">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-black">
-            Readers{" "}
+            Submissions{" "}
             <span className="font-normal text-zinc-400">({readers.length})</span>
           </h2>
           <select
@@ -466,8 +498,8 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
           </select>
         </div>
 
-        {filteredReaders.length === 0 ? (
-          <p className="text-sm text-zinc-400 py-8 text-center">No readers found.</p>
+        {filteredSubmissions.length === 0 ? (
+          <p className="text-sm text-zinc-400 py-8 text-center">No submissions found.</p>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-zinc-200">
             <table className="w-full text-sm">
@@ -483,12 +515,15 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
                     Buyer Type
                   </th>
                   <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">
+                    Project
+                  </th>
+                  <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">
                     Response
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {filteredReaders.map((r) => (
+                {filteredSubmissions.map((r) => (
                   <tr
                     key={r.person_id}
                     className="border-b border-zinc-100 last:border-0"
@@ -510,8 +545,11 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
                           {r.buyer_type}
                         </span>
                       ) : (
-                        <span className="text-xs text-zinc-400">\u2014</span>
+                        <span className="text-xs text-zinc-400">{"\u2014"}</span>
                       )}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-zinc-700 whitespace-nowrap">
+                      {r.project_name || "\u2014"}
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       {r.response ? (
