@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Eye } from "lucide-react";
+import { ArrowLeft, Loader2, Eye, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -112,10 +112,13 @@ const emptyForm = {
 interface ReaderRow {
   person_id: string;
   full_name: string;
+  company_id: string | null;
   company_name: string | null;
   buyer_type: string | null;
   response: string | null;
+  project_id: string | null;
   project_name: string | null;
+  submission_id: string | null;
 }
 
 interface MaterialDetailProps {
@@ -180,7 +183,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
       // Load readers: people with material_responses for this material
       const { data: responsesData } = await supabase
         .from("material_responses")
-        .select("person_id, response, person:people!person_id(id, full_name, buyer_type, company:companies!company_id(name))")
+        .select("person_id, response, person:people!person_id(id, full_name, buyer_type, company:companies!company_id(id, name))")
         .eq("material_id", materialId);
 
       // Get submissions that include this material + their projects and people
@@ -190,29 +193,33 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
         .eq("material_id", materialId);
       const subIds = (subMats || []).map((s) => s.submission_id);
 
-      // Build a map: person_id → project names from submissions
-      const personProjectMap = new Map<string, string>();
+      // Build maps: person_id → { project_name, project_id, submission_id }
+      const personExtraMap = new Map<string, { project_name: string | null; project_id: string | null; submission_id: string | null }>();
       if (subIds.length > 0) {
         // Get projects per submission
         const { data: subProjects } = await supabase
           .from("submission_projects")
-          .select("submission_id, project:projects(name)")
+          .select("submission_id, project_id, project:projects(name)")
           .in("submission_id", subIds);
-        const subProjectMap = new Map<string, string>();
+        const subProjectMap = new Map<string, { name: string; id: string }>();
         for (const row of subProjects || []) {
-          const r = row as unknown as { submission_id: string; project: { name: string } | null };
-          if (r.project) subProjectMap.set(r.submission_id, r.project.name);
+          const r = row as unknown as { submission_id: string; project_id: string; project: { name: string } | null };
+          if (r.project) subProjectMap.set(r.submission_id, { name: r.project.name, id: r.project_id });
         }
 
-        // Get people per submission and map to projects
+        // Get people per submission
         const { data: subPeople } = await supabase
           .from("submission_people")
           .select("submission_id, person_id")
           .in("submission_id", subIds);
         for (const sp of subPeople || []) {
-          const proj = subProjectMap.get(sp.submission_id);
-          if (proj && !personProjectMap.has(sp.person_id)) {
-            personProjectMap.set(sp.person_id, proj);
+          if (!personExtraMap.has(sp.person_id)) {
+            const proj = subProjectMap.get(sp.submission_id);
+            personExtraMap.set(sp.person_id, {
+              project_name: proj?.name || null,
+              project_id: proj?.id || null,
+              submission_id: sp.submission_id,
+            });
           }
         }
       }
@@ -224,16 +231,20 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
           id: string;
           full_name: string;
           buyer_type: string | null;
-          company: { name: string } | null;
+          company: { name: string; id?: string } | null;
         } | null;
         if (person) {
+          const extra = personExtraMap.get(person.id);
           readerMap.set(person.id, {
             person_id: person.id,
             full_name: person.full_name,
+            company_id: (person.company as unknown as { id: string })?.id || null,
             company_name: person.company?.name || null,
             buyer_type: person.buyer_type,
             response: row.response,
-            project_name: personProjectMap.get(person.id) || null,
+            project_id: extra?.project_id || null,
+            project_name: extra?.project_name || null,
+            submission_id: extra?.submission_id || null,
           });
         }
       }
@@ -242,24 +253,23 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
       if (subIds.length > 0) {
         const { data: subPeopleAll } = await supabase
           .from("submission_people")
-          .select("person:people!person_id(id, full_name, buyer_type, company:companies!company_id(name))")
+          .select("submission_id, person:people!person_id(id, full_name, buyer_type, company:companies!company_id(id, name))")
           .in("submission_id", subIds);
 
         for (const row of subPeopleAll || []) {
-          const person = (row as Record<string, unknown>).person as {
-            id: string;
-            full_name: string;
-            buyer_type: string | null;
-            company: { name: string } | null;
-          } | null;
-          if (person && !readerMap.has(person.id)) {
-            readerMap.set(person.id, {
-              person_id: person.id,
-              full_name: person.full_name,
-              company_name: person.company?.name || null,
-              buyer_type: person.buyer_type,
+          const r = row as unknown as { submission_id: string; person: { id: string; full_name: string; buyer_type: string | null; company: { id: string; name: string } | null } | null };
+          if (r.person && !readerMap.has(r.person.id)) {
+            const extra = personExtraMap.get(r.person.id);
+            readerMap.set(r.person.id, {
+              person_id: r.person.id,
+              full_name: r.person.full_name,
+              company_id: r.person.company?.id || null,
+              company_name: r.person.company?.name || null,
+              buyer_type: r.person.buyer_type,
               response: null,
-              project_name: personProjectMap.get(person.id) || null,
+              project_id: extra?.project_id || null,
+              project_name: extra?.project_name || null,
+              submission_id: r.submission_id,
             });
           }
         }
@@ -529,27 +539,59 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
                     className="border-b border-zinc-100 last:border-0"
                   >
                     <td className="px-3 py-2.5 text-xs whitespace-nowrap">
-                      <Link
-                        href={`/contacts/${r.person_id}`}
-                        className="text-zinc-700 hover:text-black hover:underline"
-                      >
-                        {r.full_name}
-                      </Link>
+                      <div className="flex items-center gap-1.5">
+                        {r.submission_id && (
+                          <Link
+                            href={`/submissions/${r.submission_id}`}
+                            className="text-zinc-400 hover:text-black transition-colors"
+                            title="View submission"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </Link>
+                        )}
+                        <Link
+                          href={`/contacts/${r.person_id}`}
+                          className="text-zinc-700 hover:text-black hover:underline"
+                        >
+                          {r.full_name}
+                        </Link>
+                      </div>
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-zinc-700 whitespace-nowrap">
-                      {r.company_name || "\u2014"}
+                    <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                      {r.company_id ? (
+                        <Link
+                          href={`/companies/${r.company_id}`}
+                          className="text-zinc-700 hover:text-black hover:underline"
+                        >
+                          {r.company_name}
+                        </Link>
+                      ) : (
+                        <span className="text-zinc-400">{"\u2014"}</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       {r.buyer_type ? (
-                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                        <Link
+                          href={`/contacts?buyer_type=${encodeURIComponent(r.buyer_type)}`}
+                          className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+                        >
                           {r.buyer_type}
-                        </span>
+                        </Link>
                       ) : (
                         <span className="text-xs text-zinc-400">{"\u2014"}</span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-zinc-700 whitespace-nowrap">
-                      {r.project_name || "\u2014"}
+                    <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                      {r.project_id ? (
+                        <Link
+                          href={`/projects/${r.project_id}`}
+                          className="text-zinc-700 hover:text-black hover:underline"
+                        >
+                          {r.project_name}
+                        </Link>
+                      ) : (
+                        <span className="text-zinc-400">{"\u2014"}</span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       {r.response ? (
