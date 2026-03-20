@@ -80,8 +80,17 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     { id: string; description: string; status: string }[]
   >([]);
   const [relatedMaterials, setRelatedMaterials] = useState<
-    { id: string; title: string; status: string; format: string | null; genre: string | null }[]
+    { id: string; title: string; material_type: string | null; format: string | null; genre: string | null; sub_genre: string | null; direction: string | null; status: string }[]
   >([]);
+
+  // Client Grid state
+  const [gridMetWith, setGridMetWith] = useState<{ id: string; full_name: string; company: string | null; buyer_type: string | null; meetingCount: number; lastMeeting: string | null }[]>([]);
+  const [gridNotMet, setGridNotMet] = useState<{ id: string; full_name: string; company_name: string | null; title: string | null; buyer_type: string | null }[]>([]);
+  const [gridLoading, setGridLoading] = useState(false);
+  const [gridLoaded, setGridLoaded] = useState(false);
+  const [gridBuyerFilter, setGridBuyerFilter] = useState("");
+  const [selectedNotMet, setSelectedNotMet] = useState<string | null>(null);
+  const [selectedPersonDetail, setSelectedPersonDetail] = useState<{ materials: { title: string; date: string | null; response: string | null }[] } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -136,7 +145,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
           .eq("client_id", clientId),
         supabase
           .from("client_materials")
-          .select("id, title, status, format, genre")
+          .select("id, title, material_type, format, genre, sub_genre, direction, status")
           .eq("client_id", clientId)
           .order("updated_at", { ascending: false }),
         supabase
@@ -200,6 +209,130 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     [companies]
   );
 
+  useEffect(() => {
+    if (activeTab !== "grid" || gridLoaded) return;
+    setGridLoading(true);
+    async function loadGrid() {
+      // 1. Get meeting_ids for this client
+      const { data: clientMeetings } = await supabase
+        .from("meeting_clients")
+        .select("meeting_id, meeting:meetings(meeting_at)")
+        .eq("client_id", clientId);
+
+      const meetingIds = (clientMeetings || []).map((m) => m.meeting_id);
+      const meetingDateMap = new Map<string, string | null>();
+      for (const cm of clientMeetings || []) {
+        const r = cm as unknown as { meeting_id: string; meeting: { meeting_at: string | null } | null };
+        meetingDateMap.set(r.meeting_id, r.meeting?.meeting_at || null);
+      }
+
+      // 2. Get people on those meetings
+      let metMap: Record<string, { count: number; lastDate: string | null; full_name: string; company: string | null; buyer_type: string | null }> = {};
+      if (meetingIds.length > 0) {
+        const { data: meetingPeople } = await supabase
+          .from("meeting_people")
+          .select("person_id, meeting_id, person:people(full_name, buyer_type, company:companies!company_id(name))")
+          .in("meeting_id", meetingIds);
+        for (const row of meetingPeople || []) {
+          const r = row as unknown as { person_id: string; meeting_id: string; person: { full_name: string; buyer_type: string | null; company: { name: string } | null } | null };
+          if (!r.person) continue;
+          if (!metMap[r.person_id]) {
+            metMap[r.person_id] = { count: 0, lastDate: null, full_name: r.person.full_name, company: r.person.company?.name || null, buyer_type: r.person.buyer_type };
+          }
+          metMap[r.person_id].count++;
+          const meetDate = meetingDateMap.get(r.meeting_id) || null;
+          if (meetDate && (!metMap[r.person_id].lastDate || meetDate > metMap[r.person_id].lastDate!)) {
+            metMap[r.person_id].lastDate = meetDate;
+          }
+        }
+      }
+
+      // 3. Get all buyers (people with buyer_type set)
+      const { data: allBuyers } = await supabase
+        .from("people")
+        .select("id, full_name, title, buyer_type, company:companies!company_id(name)")
+        .not("buyer_type", "is", null)
+        .order("full_name");
+
+      // 4. Build met/notMet arrays
+      const metIds = new Set(Object.keys(metMap));
+      const met = Object.entries(metMap).map(([id, data]) => ({
+        id,
+        full_name: data.full_name,
+        company: data.company,
+        buyer_type: data.buyer_type,
+        meetingCount: data.count,
+        lastMeeting: data.lastDate,
+      })).sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+      const notMet = (allBuyers || [])
+        .filter((b) => !metIds.has(b.id))
+        .map((b) => {
+          const bb = b as unknown as { id: string; full_name: string; title: string | null; buyer_type: string | null; company: { name: string } | null };
+          return { id: bb.id, full_name: bb.full_name, company_name: bb.company?.name || null, title: bb.title, buyer_type: bb.buyer_type };
+        });
+
+      setGridMetWith(met);
+      setGridNotMet(notMet);
+      setGridLoading(false);
+      setGridLoaded(true);
+    }
+    loadGrid();
+  }, [activeTab, gridLoaded, clientId, supabase]);
+
+  async function loadPersonDetail(personId: string) {
+    setSelectedNotMet(personId);
+    setSelectedPersonDetail(null);
+    // Find submissions where both this client and this person appear
+    const { data: personSubs } = await supabase
+      .from("submission_people")
+      .select("submission_id")
+      .eq("person_id", personId);
+    const { data: clientSubs } = await supabase
+      .from("submission_clients")
+      .select("submission_id")
+      .eq("client_id", clientId);
+
+    const personSubIds = new Set((personSubs || []).map((s) => s.submission_id));
+    const sharedSubIds = (clientSubs || []).filter((s) => personSubIds.has(s.submission_id)).map((s) => s.submission_id);
+
+    if (sharedSubIds.length > 0) {
+      const { data: subMats } = await supabase
+        .from("submission_materials")
+        .select("material:client_materials(id, title), submission:submissions(submission_date)")
+        .in("submission_id", sharedSubIds);
+
+      const matIds = new Set<string>();
+      const materials: { title: string; date: string | null; response: string | null }[] = [];
+      for (const row of subMats || []) {
+        const r = row as unknown as { material: { id: string; title: string } | null; submission: { submission_date: string | null } | null };
+        if (r.material && !matIds.has(r.material.id)) {
+          matIds.add(r.material.id);
+          materials.push({ title: r.material.title, date: r.submission?.submission_date || null, response: null });
+        }
+      }
+
+      // Get responses
+      if (materials.length > 0) {
+        const matIdArr = Array.from(matIds);
+        const { data: responses } = await supabase
+          .from("material_responses")
+          .select("material_id, response")
+          .eq("person_id", personId)
+          .in("material_id", matIdArr);
+        const respMap = new Map((responses || []).map((r) => [r.material_id, r.response]));
+        const matIdList = Array.from(matIds);
+        for (let i = 0; i < matIdList.length; i++) {
+          materials[i].response = respMap.get(matIdList[i]) || null;
+        }
+      }
+
+      setSelectedPersonDetail({ materials });
+    } else {
+      setSelectedPersonDetail({ materials: [] });
+    }
+  }
+
   async function loadMoreCalls() {
     setCallsLoading(true);
     try {
@@ -262,6 +395,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     { id: "materials", label: "Materials" },
     { id: "meetings", label: "Meetings" },
     { id: "submissions", label: "Submissions" },
+    { id: "grid", label: "Grid" },
   ];
 
   if (loading) {
@@ -410,36 +544,52 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
 
       {/* Materials Tab */}
       {activeTab === "materials" && (
-        <div className="space-y-2">
+        <div>
           {relatedMaterials.length === 0 ? (
             <p className="text-sm text-zinc-400 py-8 text-center">No materials yet.</p>
           ) : (
-            relatedMaterials.map((m) => (
-              <div key={m.id} className="flex items-center justify-between rounded-md border border-zinc-200 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium text-black">{m.title}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    {m.format && (
-                      <span className="text-[11px] text-zinc-400">{m.format}</span>
-                    )}
-                    {m.genre && (
-                      <span className="text-[11px] text-zinc-400">{m.genre}</span>
-                    )}
-                  </div>
-                </div>
-                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-                  m.status === "not_yet_reviewed" ? "bg-zinc-50 text-zinc-500 border-zinc-200" :
-                  m.status === "in_review" ? "bg-blue-50 text-blue-700 border-blue-200" :
-                  m.status === "coverage_available" ? "bg-purple-50 text-purple-700 border-purple-200" :
-                  m.status === "notes_given" ? "bg-amber-50 text-amber-700 border-amber-200" :
-                  m.status === "editing" ? "bg-orange-50 text-orange-700 border-orange-200" :
-                  m.status === "final_draft" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                  "bg-zinc-50 text-zinc-500 border-zinc-200"
-                }`}>
-                  {m.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                </span>
-              </div>
-            ))
+            <div className="overflow-x-auto rounded-lg border border-zinc-200">
+              <table className="w-full min-w-[700px] text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-200 bg-zinc-50/50">
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Title</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Type</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Format</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Genre</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Sub-genre</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {relatedMaterials.map((m) => (
+                    <tr
+                      key={m.id}
+                      onClick={() => router.push(`/materials/${m.id}`)}
+                      className="cursor-pointer border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50/50 transition-colors"
+                    >
+                      <td className="px-3 py-2.5 font-medium text-black whitespace-nowrap">{m.title}</td>
+                      <td className="px-3 py-2.5 text-zinc-600 whitespace-nowrap">{m.material_type ? m.material_type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "\u2014"}</td>
+                      <td className="px-3 py-2.5 text-zinc-600 whitespace-nowrap">{m.format || "\u2014"}</td>
+                      <td className="px-3 py-2.5 text-zinc-600 whitespace-nowrap">{m.genre || "\u2014"}</td>
+                      <td className="px-3 py-2.5 text-zinc-600 whitespace-nowrap">{m.sub_genre || "\u2014"}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                          m.status === "not_yet_reviewed" ? "bg-zinc-50 text-zinc-500 border-zinc-200" :
+                          m.status === "in_review" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                          m.status === "coverage_available" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                          m.status === "notes_given" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                          m.status === "editing" ? "bg-orange-50 text-orange-700 border-orange-200" :
+                          m.status === "final_draft" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                          "bg-zinc-50 text-zinc-500 border-zinc-200"
+                        }`}>
+                          {m.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
@@ -497,6 +647,132 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
           )}
         </div>
       )}
+      {/* Grid Tab */}
+      {activeTab === "grid" && (
+        <div>
+          {gridLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+            </div>
+          ) : (
+            <>
+              {/* Client summary card */}
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-black">{form.full_name}</h3>
+                    {form.staff_level && <p className="text-sm text-zinc-600">{form.staff_level}</p>}
+                    <p className="text-sm text-zinc-500">{companies.find((c) => c.id === form.company_id)?.name || "No company"}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Met With / Not Yet Met */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                {/* Met With */}
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/30 p-4">
+                  <h4 className="text-sm font-semibold text-emerald-800 mb-3">
+                    Met With <span className="font-normal text-emerald-600">({gridMetWith.length})</span>
+                  </h4>
+                  {gridMetWith.length === 0 ? (
+                    <p className="text-xs text-emerald-600/60">No meetings with any buyers yet.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {gridMetWith.map((p) => (
+                        <div key={p.id} className="flex items-center justify-between text-xs">
+                          <div>
+                            <span className="font-medium text-emerald-900">{p.full_name}</span>
+                            {p.company && <span className="ml-1 text-emerald-600">({p.company})</span>}
+                          </div>
+                          <span className="text-emerald-600">
+                            {p.meetingCount} meeting{p.meetingCount !== 1 ? "s" : ""}
+                            {p.lastMeeting && ` · ${new Date(p.lastMeeting).toLocaleDateString()}`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Not Yet Met */}
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50/30 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold text-zinc-700">
+                      Not Yet Met <span className="font-normal text-zinc-500">({gridBuyerFilter ? gridNotMet.filter((p) => p.buyer_type === gridBuyerFilter).length : gridNotMet.length})</span>
+                    </h4>
+                    <select
+                      value={gridBuyerFilter}
+                      onChange={(e) => { setGridBuyerFilter(e.target.value); setSelectedNotMet(null); setSelectedPersonDetail(null); }}
+                      className="rounded border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-600"
+                    >
+                      <option value="">All</option>
+                      <option value="Pod">Pod</option>
+                      <option value="Studio">Studio</option>
+                      <option value="Network">Network</option>
+                      <option value="Streamer">Streamer</option>
+                      <option value="Production Company">Production Company</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  {gridNotMet.length === 0 ? (
+                    <p className="text-xs text-zinc-400">Met with all buyers!</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {gridNotMet
+                        .filter((p) => !gridBuyerFilter || p.buyer_type === gridBuyerFilter)
+                        .map((p) => (
+                        <div key={p.id}>
+                          <button
+                            onClick={() => selectedNotMet === p.id ? (setSelectedNotMet(null), setSelectedPersonDetail(null)) : loadPersonDetail(p.id)}
+                            className={`w-full text-left text-xs px-2 py-1 rounded transition-colors ${selectedNotMet === p.id ? "bg-zinc-100 text-black" : "text-zinc-600 hover:bg-zinc-50"}`}
+                          >
+                            <span className="font-medium">{p.full_name}</span>
+                            {p.company_name && <span className="ml-1 text-zinc-400">({p.company_name})</span>}
+                            {p.buyer_type && <span className="ml-1 text-zinc-400">· {p.buyer_type}</span>}
+                          </button>
+                          {selectedNotMet === p.id && (
+                            <div className="ml-2 mt-1 mb-2 pl-2 border-l-2 border-zinc-200">
+                              {!selectedPersonDetail ? (
+                                <p className="text-[10px] text-zinc-400">Loading...</p>
+                              ) : selectedPersonDetail.materials.length === 0 ? (
+                                <p className="text-[10px] text-zinc-400">No shared submissions.</p>
+                              ) : (
+                                <div className="space-y-1">
+                                  {selectedPersonDetail.materials.map((mat, i) => (
+                                    <div key={i} className="text-[11px] flex items-center justify-between">
+                                      <span className="text-zinc-700">{mat.title}</span>
+                                      <div className="flex items-center gap-2">
+                                        {mat.date && <span className="text-zinc-400">{new Date(mat.date).toLocaleDateString()}</span>}
+                                        {mat.response ? (
+                                          <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                                            mat.response === "love" ? "bg-emerald-100 text-emerald-700" :
+                                            mat.response === "like" ? "bg-blue-100 text-blue-700" :
+                                            mat.response === "meh" ? "bg-amber-100 text-amber-700" :
+                                            "bg-red-100 text-red-700"
+                                          }`}>
+                                            {mat.response.charAt(0).toUpperCase() + mat.response.slice(1)}
+                                          </span>
+                                        ) : (
+                                          <span className="text-[10px] text-zinc-400">No response</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Danger Zone */}
       <div className="mt-12 border-t border-zinc-200 pt-6">
         <p className="text-xs text-zinc-400 mb-3">Danger Zone</p>
