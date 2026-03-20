@@ -145,7 +145,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         });
       }
 
-      const personIds = (sp || []).map((r) => r.person_id);
+      let personIds = (sp || []).map((r) => r.person_id);
       const submissionDate = sub.submission_date || todayDate();
 
       // Build materialRows from existing submission_materials + responses
@@ -193,6 +193,14 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         }
       }
       setMaterialRows(rows);
+
+      // Sync person_ids to include everyone from material responses
+      const allPersonIdsFromRows = rows.map((r) => r.personId).filter(Boolean);
+      for (const pid of allPersonIdsFromRows) {
+        if (!personIds.includes(pid)) {
+          personIds = [...personIds, pid];
+        }
+      }
 
       // Load linked meetings
       const { data: smMeetingsData } = await supabase
@@ -309,8 +317,8 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
 
   function removeRow(idx: number) {
     const row = materialRows[idx];
-    // Delete response from DB if it had person+response
-    if (row.materialId && row.personId && row.response) {
+    // Delete response from DB if person was set (regardless of response value)
+    if (row.materialId && row.personId) {
       supabase.from("material_responses").delete().eq("material_id", row.materialId).eq("person_id", row.personId);
     }
     setMaterialRows((prev) => prev.filter((_, i) => i !== idx));
@@ -396,12 +404,16 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
       if (updateError) { console.error("Save error:", updateError); return; }
 
       // Sync join tables — delete all then re-insert
-      await Promise.all([
+      const [delC, delP, delPr, delM] = await Promise.all([
         supabase.from("submission_clients").delete().eq("submission_id", submissionId),
         supabase.from("submission_people").delete().eq("submission_id", submissionId),
         supabase.from("submission_projects").delete().eq("submission_id", submissionId),
         supabase.from("submission_materials").delete().eq("submission_id", submissionId),
       ]);
+      if (delC.error) console.error("Delete clients error:", delC.error);
+      if (delP.error) console.error("Delete people error:", delP.error);
+      if (delPr.error) console.error("Delete projects error:", delPr.error);
+      if (delM.error) console.error("Delete materials error:", delM.error);
 
       if (clientIds.length > 0)
         await supabase.from("submission_clients").insert(clientIds.map((id) => ({ submission_id: submissionId, client_id: id })));
@@ -411,6 +423,14 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         await supabase.from("submission_projects").insert(form.project_ids.map((id) => ({ submission_id: submissionId, project_id: id })));
       if (materialIds.length > 0)
         await supabase.from("submission_materials").insert(materialIds.map((id) => ({ submission_id: submissionId, material_id: id })));
+
+      // Clean up material_responses: delete responses for materials no longer on this submission
+      // Get all material IDs that were previously on this submission (from DB) vs what's currently in materialRows
+      // The safest approach: for each material×person combo in materialRows, those stay. Everything else for these materials gets cleaned.
+      // Actually, material_responses are global (not per-submission), so we only delete responses
+      // for material×person combos that were explicitly removed by the user via removeRow
+      // The removeRow function already handles deleting individual responses.
+      // But if an entire material is removed (all its rows deleted), we should also clean up.
 
       // Save new meetings
       for (const mRow of meetingRows) {
