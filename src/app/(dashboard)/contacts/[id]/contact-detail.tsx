@@ -120,6 +120,13 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
     { id: string; title: string; material_type: string | null; direction: string | null; response: string | null }[]
   >([]);
 
+  // Grid tab state
+  const [gridMetWith, setGridMetWith] = useState<{ id: string; full_name: string; meetingCount: number; lastMeeting: string | null }[]>([]);
+  const [gridNotMet, setGridNotMet] = useState<{ id: string; full_name: string }[]>([]);
+  const [gridMaterials, setGridMaterials] = useState<{ id: string; title: string; client_name: string | null; response: string | null }[]>([]);
+  const [gridLoading, setGridLoading] = useState(false);
+  const [gridLoaded, setGridLoaded] = useState(false);
+
   useEffect(() => {
     async function load() {
       const [
@@ -282,6 +289,95 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
     [contactPeople, contactId]
   );
 
+  // Load grid data when tab is selected
+  useEffect(() => {
+    if (activeTab !== "grid" || gridLoaded || !form.buyer_type) return;
+    setGridLoading(true);
+    async function loadGrid() {
+      // Get all clients
+      const { data: allClients } = await supabase.from("clients").select("id, full_name").order("full_name");
+
+      // Get meeting IDs this person attended
+      const { data: personMeetings } = await supabase.from("meeting_people").select("meeting_id").eq("person_id", contactId);
+      const meetingIds = (personMeetings || []).map((m) => m.meeting_id);
+
+      // Get clients on those meetings
+      let metClientMap: Record<string, { count: number; lastDate: string | null }> = {};
+      if (meetingIds.length > 0) {
+        const { data: meetingClients } = await supabase
+          .from("meeting_clients")
+          .select("client_id, meeting:meetings(meeting_at)")
+          .in("meeting_id", meetingIds);
+        for (const row of meetingClients || []) {
+          const r = row as unknown as { client_id: string; meeting: { meeting_at: string | null } | null };
+          if (!metClientMap[r.client_id]) metClientMap[r.client_id] = { count: 0, lastDate: null };
+          metClientMap[r.client_id].count++;
+          if (r.meeting?.meeting_at && (!metClientMap[r.client_id].lastDate || r.meeting.meeting_at > metClientMap[r.client_id].lastDate!)) {
+            metClientMap[r.client_id].lastDate = r.meeting.meeting_at;
+          }
+        }
+      }
+
+      // Also check submissions
+      const { data: personSubs } = await supabase.from("submission_people").select("submission_id").eq("person_id", contactId);
+      const subIds = (personSubs || []).map((s) => s.submission_id);
+      if (subIds.length > 0) {
+        const { data: subClients } = await supabase.from("submission_clients").select("client_id").in("submission_id", subIds);
+        for (const sc of subClients || []) {
+          if (!metClientMap[sc.client_id]) metClientMap[sc.client_id] = { count: 0, lastDate: null };
+        }
+      }
+
+      const clientMap = new Map((allClients || []).map((c) => [c.id, c.full_name]));
+      const met = Object.entries(metClientMap).map(([id, data]) => ({
+        id,
+        full_name: clientMap.get(id) || "Unknown",
+        meetingCount: data.count,
+        lastMeeting: data.lastDate,
+      })).sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+      const metIds = new Set(Object.keys(metClientMap));
+      const notMet = (allClients || []).filter((c) => !metIds.has(c.id)).map((c) => ({ id: c.id, full_name: c.full_name }));
+
+      setGridMetWith(met);
+      setGridNotMet(notMet);
+
+      // Materials read by this person
+      if (subIds.length > 0) {
+        const { data: subMats } = await supabase
+          .from("submission_materials")
+          .select("material:client_materials(id, title, client:clients!client_id(full_name))")
+          .in("submission_id", subIds);
+        const matIds = new Set<string>();
+        const mats: typeof gridMaterials = [];
+        for (const row of subMats || []) {
+          const r = row as unknown as { material: { id: string; title: string; client: { full_name: string } | null } | null };
+          if (r.material && !matIds.has(r.material.id)) {
+            matIds.add(r.material.id);
+            mats.push({ id: r.material.id, title: r.material.title, client_name: r.material.client?.full_name || null, response: null });
+          }
+        }
+        // Get responses
+        if (mats.length > 0) {
+          const { data: responses } = await supabase
+            .from("material_responses")
+            .select("material_id, response")
+            .eq("person_id", contactId)
+            .in("material_id", mats.map((m) => m.id));
+          const respMap = new Map((responses || []).map((r) => [r.material_id, r.response]));
+          for (const m of mats) {
+            m.response = respMap.get(m.id) || null;
+          }
+        }
+        setGridMaterials(mats);
+      }
+
+      setGridLoading(false);
+      setGridLoaded(true);
+    }
+    loadGrid();
+  }, [activeTab, gridLoaded, form.buyer_type, contactId, supabase]);
+
   async function loadMoreCalls() {
     setCallsLoading(true);
     try {
@@ -340,6 +436,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
 
   const tabs = [
     { id: "info", label: "Info" },
+    ...(form.buyer_type ? [{ id: "grid", label: "Grid" }] : []),
     { id: "meetings", label: "Meetings" },
     { id: "calls", label: "Calls" },
     { id: "submissions", label: "Submissions" },
@@ -628,6 +725,129 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
           )}
         </div>
       )}
+      {/* Grid tab */}
+      {activeTab === "grid" && (
+        <div>
+          {gridLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+            </div>
+          ) : (
+            <>
+              {/* Person summary card */}
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold text-black">{form.full_name}</h3>
+                    {form.title && <p className="text-sm text-zinc-600">{form.title}</p>}
+                    <p className="text-sm text-zinc-500">{companies.find((c) => c.id === form.company_id)?.name || "No company"}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    {form.type && (
+                      <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                        {form.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </span>
+                    )}
+                    {form.exec_level && (
+                      <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                        {form.exec_level.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                      </span>
+                    )}
+                    {form.buyer_type && (
+                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                        {form.buyer_type}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 flex items-center gap-4 text-xs text-zinc-500">
+                  {phones.length > 0 && (
+                    <span>{phones.find((p) => p.is_primary)?.number || phones[0]?.number}</span>
+                  )}
+                  {emails.length > 0 && (
+                    <span>{emails.find((e) => e.is_primary)?.address || emails[0]?.address}</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Met With / Not Met / Materials */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                {/* Met With */}
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/30 p-4">
+                  <h4 className="text-sm font-semibold text-emerald-800 mb-3">
+                    Met With <span className="font-normal text-emerald-600">({gridMetWith.length})</span>
+                  </h4>
+                  {gridMetWith.length === 0 ? (
+                    <p className="text-xs text-emerald-600/60">No meetings with any clients yet.</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {gridMetWith.map((c) => (
+                        <div key={c.id} className="flex items-center justify-between text-xs">
+                          <span className="font-medium text-emerald-900">{c.full_name}</span>
+                          <span className="text-emerald-600">
+                            {c.meetingCount} meeting{c.meetingCount !== 1 ? "s" : ""}
+                            {c.lastMeeting && ` · ${new Date(c.lastMeeting).toLocaleDateString()}`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Not Yet Met */}
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50/30 p-4">
+                  <h4 className="text-sm font-semibold text-zinc-700 mb-3">
+                    Not Yet Met <span className="font-normal text-zinc-500">({gridNotMet.length})</span>
+                  </h4>
+                  {gridNotMet.length === 0 ? (
+                    <p className="text-xs text-zinc-400">Met with all clients!</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {gridNotMet.map((c) => (
+                        <p key={c.id} className="text-xs text-zinc-600">{c.full_name}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Material Read */}
+              <div className="rounded-lg border border-blue-200 bg-blue-50/30 p-4">
+                <h4 className="text-sm font-semibold text-blue-800 mb-3">
+                  Material Read <span className="font-normal text-blue-600">({gridMaterials.length})</span>
+                </h4>
+                {gridMaterials.length === 0 ? (
+                  <p className="text-xs text-blue-600/60">No materials submitted to this contact yet.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {gridMaterials.map((m) => (
+                      <div key={m.id} className="flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-medium text-blue-900">{m.title}</span>
+                          {m.client_name && <span className="ml-2 text-blue-600">({m.client_name})</span>}
+                        </div>
+                        {m.response ? (
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                            m.response === "love" ? "bg-emerald-100 text-emerald-700" :
+                            m.response === "like" ? "bg-blue-100 text-blue-700" :
+                            m.response === "meh" ? "bg-amber-100 text-amber-700" :
+                            "bg-red-100 text-red-700"
+                          }`}>
+                            {m.response.charAt(0).toUpperCase() + m.response.slice(1)}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-zinc-400">No response</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {/* Danger Zone */}
       <div className="mt-12 border-t border-zinc-200 pt-6">
         <p className="text-xs text-zinc-400 mb-3">Danger Zone</p>
