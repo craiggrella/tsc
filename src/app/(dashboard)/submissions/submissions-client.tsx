@@ -133,21 +133,20 @@ export function SubmissionsClient({ userId }: SubmissionsClientProps) {
 
       {/* Table */}
       <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200">
-        <table className="w-full min-w-[800px] text-sm">
+        <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Clients</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">People</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Status</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Reason</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Response</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Date</th>
+              <th className="w-40 px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Clients</th>
+              <th className="w-40 px-3 py-2.5 text-left text-xs font-medium text-zinc-500">People</th>
+              <th className="w-24 px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Status</th>
+              <th className="flex-1 px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Reason</th>
+              <th className="w-28 px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Date</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-3 py-12 text-center text-sm text-zinc-400">
+                <td colSpan={5} className="px-3 py-12 text-center text-sm text-zinc-400">
                   <Send className="mx-auto mb-2 h-8 w-8 text-zinc-300" />
                   No submissions found.
                 </td>
@@ -161,17 +160,17 @@ export function SubmissionsClient({ userId }: SubmissionsClientProps) {
                     onClick={() => router.push(`/submissions/${sub.id}`)}
                     className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                   >
-                    <td className="px-3 py-2.5 text-zinc-700 text-xs whitespace-nowrap">
-                      {rel?.clientNames.join(", ") || "\u2014"}
+                    <td className="w-40 px-3 py-2.5 text-zinc-700 text-xs">
+                      <span className="line-clamp-2">{rel?.clientNames.join(", ") || "\u2014"}</span>
                     </td>
-                    <td className="px-3 py-2.5 text-zinc-700 text-xs whitespace-nowrap">
-                      {rel?.personNames.join(", ") || "\u2014"}
+                    <td className="w-40 px-3 py-2.5 text-zinc-700 text-xs">
+                      <span className="line-clamp-2">{rel?.personNames.join(", ") || "\u2014"}</span>
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
+                    <td className="w-24 px-3 py-2.5">
                       <StatusBadge status={sub.status} />
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
-                      <div className="flex flex-wrap gap-1">
+                    <td className="px-3 py-2.5">
+                      <div className="flex flex-wrap gap-1 line-clamp-2">
                         {sub.reason.length > 0
                           ? sub.reason.map((r) => (
                               <span key={r} className="inline-flex items-center rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
@@ -181,10 +180,7 @@ export function SubmissionsClient({ userId }: SubmissionsClientProps) {
                           : "\u2014"}
                       </div>
                     </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
-                      <StatusBadge status={sub.response} />
-                    </td>
-                    <td className="px-3 py-2.5 text-zinc-500 text-xs">
+                    <td className="w-28 px-3 py-2.5 text-zinc-500 text-xs">
                       {sub.submission_date
                         ? new Date(sub.submission_date).toLocaleDateString()
                         : "\u2014"}

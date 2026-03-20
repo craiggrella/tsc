@@ -18,13 +18,6 @@ const STATUSES: { value: SubmissionStatus; label: string }[] = [
   { value: "connected", label: "Connected" },
 ];
 
-const RESPONSES = [
-  { value: "love", label: "Love" },
-  { value: "like", label: "Like" },
-  { value: "meh", label: "Meh" },
-  { value: "hate", label: "Hate" },
-];
-
 const DEFAULT_REASONS = [
   "General",
   "Meeting",
@@ -38,7 +31,6 @@ const emptyForm = {
   description: "",
   status: "need_to_send" as SubmissionStatus,
   reason: [] as string[],
-  response: null as "love" | "like" | "meh" | "hate" | null,
   submission_date: null as string | null,
   set_meeting: false,
   notes: null as string | null,
@@ -63,8 +55,12 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
   const [reasonList, setReasonList] = useState(DEFAULT_REASONS);
 
   // Materials state
-  const [materials, setMaterials] = useState<{ id: string; title: string }[]>([]);
-  const [allMaterials, setAllMaterials] = useState<{ id: string; title: string }[]>([]);
+  const [submissionMaterials, setSubmissionMaterials] = useState<{
+    id: string;
+    title: string;
+    client_name: string | null;
+  }[]>([]);
+  const [allMaterials, setAllMaterials] = useState<{ id: string; title: string; client_name: string | null }[]>([]);
   const [showMaterialPicker, setShowMaterialPicker] = useState(false);
 
   useEffect(() => {
@@ -96,6 +92,24 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
     [projectList]
   );
 
+  // Build material x person table rows
+  const materialRows = useMemo(() => {
+    const rows: { materialId: string; materialTitle: string; clientName: string | null; personId: string; personName: string }[] = [];
+    for (const mat of submissionMaterials) {
+      for (const pid of form.person_ids) {
+        const personName = personOptions.find((p) => p.id === pid)?.label || "Unknown";
+        rows.push({
+          materialId: mat.id,
+          materialTitle: mat.title,
+          clientName: mat.client_name,
+          personId: pid,
+          personName,
+        });
+      }
+    }
+    return rows;
+  }, [submissionMaterials, form.person_ids, personOptions]);
+
   const createProject = useCallback(async (name: string): Promise<RelationOption | null> => {
     const { data, error } = await supabase
       .from("projects")
@@ -124,7 +138,6 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
         description: autoDesc,
         status: form.status,
         reason: form.reason,
-        response: form.response,
         submission_date: form.submission_date || null,
         set_meeting: form.set_meeting,
         notes: form.notes || null,
@@ -155,9 +168,9 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
                 form.project_ids.map((id) => ({ submission_id: subId, project_id: id }))
               )
             : Promise.resolve(),
-          materials.length > 0
+          submissionMaterials.length > 0
             ? supabase.from("submission_materials").insert(
-                materials.map((m) => ({ submission_id: subId, material_id: m.id }))
+                submissionMaterials.map((m) => ({ submission_id: subId, material_id: m.id }))
               )
             : Promise.resolve(),
         ]);
@@ -167,7 +180,7 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
     } finally {
       setSaving(false);
     }
-  }, [form, supabase, materials, clientOptions, personOptions, router]);
+  }, [form, supabase, submissionMaterials, clientOptions, personOptions, router]);
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -221,23 +234,13 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
           />
         </Field>
 
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Status">
-            <Select
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value as SubmissionStatus })}
-              options={STATUSES}
-            />
-          </Field>
-          <Field label="Response">
-            <Select
-              value={form.response || ""}
-              onChange={(e) => setForm({ ...form, response: (e.target.value || null) as typeof form.response })}
-              options={RESPONSES}
-              placeholder="None"
-            />
-          </Field>
-        </div>
+        <Field label="Status">
+          <Select
+            value={form.status}
+            onChange={(e) => setForm({ ...form, status: e.target.value as SubmissionStatus })}
+            options={STATUSES}
+          />
+        </Field>
 
         <Field label="Reason">
           <MultiRelationPicker
@@ -270,22 +273,56 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
           </label>
         </Field>
 
-        {/* Materials */}
+        {/* Materials Table */}
         <Field label="Materials">
-          <div className="space-y-2">
-            {materials.map((mat) => (
-              <div key={mat.id} className="rounded-md border border-zinc-200 px-3 py-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium text-black">{mat.title}</span>
-                  <button
-                    onClick={() => setMaterials((prev) => prev.filter((m) => m.id !== mat.id))}
-                    className="text-xs text-zinc-400 hover:text-red-500 transition-colors"
-                  >
-                    Remove
-                  </button>
-                </div>
+          <div className="space-y-3">
+            {materialRows.length > 0 && (
+              <div className="overflow-x-auto rounded-md border border-zinc-200">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
+                      <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Client</th>
+                      <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Material</th>
+                      <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Date</th>
+                      <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Person</th>
+                      <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Response</th>
+                      <th className="px-3 py-2 w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {materialRows.map((row) => {
+                      const isFirstPersonForMaterial = form.person_ids.indexOf(row.personId) === 0;
+                      return (
+                        <tr key={`${row.materialId}-${row.personId}`} className="border-b border-zinc-100 last:border-0">
+                          <td className="px-3 py-2 text-zinc-600">{row.clientName || "\u2014"}</td>
+                          <td className="px-3 py-2">
+                            <span className="text-black">{row.materialTitle}</span>
+                          </td>
+                          <td className="px-3 py-2 text-zinc-500">{form.submission_date || "\u2014"}</td>
+                          <td className="px-3 py-2 text-black">{row.personName}</td>
+                          <td className="px-3 py-2 text-xs text-zinc-400 italic">Set after creation</td>
+                          <td className="px-3 py-2">
+                            {isFirstPersonForMaterial && (
+                              <button
+                                onClick={() => setSubmissionMaterials((prev) => prev.filter((m) => m.id !== row.materialId))}
+                                className="text-xs text-zinc-400 hover:text-red-500 transition-colors"
+                              >
+                                Remove
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
-            ))}
+            )}
+
+            {submissionMaterials.length > 0 && form.person_ids.length === 0 && (
+              <div className="text-xs text-zinc-400 italic">Add people to see material response rows.</div>
+            )}
+
             {showMaterialPicker ? (
               <div className="space-y-1">
                 <select
@@ -293,8 +330,8 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
                     const matId = e.target.value;
                     if (!matId) return;
                     const mat = allMaterials.find((m) => m.id === matId);
-                    if (mat && !materials.find((m) => m.id === matId)) {
-                      setMaterials((prev) => [...prev, mat]);
+                    if (mat && !submissionMaterials.find((m) => m.id === matId)) {
+                      setSubmissionMaterials((prev) => [...prev, mat]);
                     }
                     setShowMaterialPicker(false);
                   }}
@@ -303,9 +340,9 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
                 >
                   <option value="" disabled>Select a material...</option>
                   {allMaterials
-                    .filter((m) => !materials.find((em) => em.id === m.id))
+                    .filter((m) => !submissionMaterials.find((em) => em.id === m.id))
                     .map((m) => (
-                      <option key={m.id} value={m.id}>{m.title}</option>
+                      <option key={m.id} value={m.id}>{m.client_name ? `${m.client_name} — ${m.title}` : m.title}</option>
                     ))}
                 </select>
                 <button onClick={() => setShowMaterialPicker(false)} className="text-xs text-zinc-400 hover:text-zinc-600">Cancel</button>
@@ -314,8 +351,14 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
               <button
                 onClick={() => {
                   if (allMaterials.length === 0) {
-                    supabase.from("client_materials").select("id, title").order("title").then(({ data }) => {
-                      setAllMaterials(data || []);
+                    supabase.from("client_materials").select("id, title, client:clients!client_id(full_name)").order("title").then(({ data }) => {
+                      setAllMaterials(
+                        (data || []).map((m: Record<string, unknown>) => ({
+                          id: m.id as string,
+                          title: m.title as string,
+                          client_name: (m.client as { full_name: string } | null)?.full_name || null,
+                        }))
+                      );
                     });
                   }
                   setShowMaterialPicker(true);
