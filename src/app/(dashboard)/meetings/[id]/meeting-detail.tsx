@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Send } from "lucide-react";
+import { StatusBadge } from "@/components/shared/status-badge";
 import { createClient } from "@/lib/supabase/client";
 import {
   MultiRelationPicker,
@@ -51,6 +52,14 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
   const [projectList, setProjectList] = useState<{ id: string; name: string }[]>([]);
   const [profiles, setProfiles] = useState<{ id: string; full_name: string; role: string }[]>([]);
 
+  // Linked submission context (if this meeting was created from a submission)
+  const [linkedSubmission, setLinkedSubmission] = useState<{
+    id: string;
+    description: string;
+    submission_date: string | null;
+    materials: { title: string; client_name: string | null; person_name: string | null; response: string | null }[];
+  } | null>(null);
+
   useEffect(() => {
     async function load() {
       const [
@@ -96,6 +105,63 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
         project_ids: (mpr || []).map((r) => r.project_id),
         attendee_ids: (ma || []).map((r) => r.profile_id),
       });
+
+      // Check if this meeting was created from a submission
+      const { data: smLink } = await supabase
+        .from("submission_meetings")
+        .select("submission_id")
+        .eq("meeting_id", meetingId)
+        .limit(1);
+
+      if (smLink && smLink.length > 0) {
+        const subId = smLink[0].submission_id;
+        const [{ data: sub }, { data: subMats }, { data: subPeople }] = await Promise.all([
+          supabase.from("submissions").select("id, description, submission_date").eq("id", subId).single(),
+          supabase.from("submission_materials").select("material_id, material:client_materials(id, title, client:clients!client_id(full_name))").eq("submission_id", subId),
+          supabase.from("submission_people").select("person_id").eq("submission_id", subId),
+        ]);
+
+        if (sub) {
+          const personIds = (subPeople || []).map((r) => r.person_id);
+          const matIds = (subMats || []).map((r) => r.material_id).filter(Boolean);
+
+          // Fetch responses for these material×person combos
+          let respMap: Record<string, Record<string, string>> = {};
+          if (matIds.length > 0 && personIds.length > 0) {
+            const { data: respData } = await supabase
+              .from("material_responses")
+              .select("material_id, person_id, response")
+              .in("material_id", matIds)
+              .in("person_id", personIds);
+            for (const r of respData || []) {
+              if (!respMap[r.material_id]) respMap[r.material_id] = {};
+              if (r.response) respMap[r.material_id][r.person_id] = r.response;
+            }
+          }
+
+          const materials: { title: string; client_name: string | null; person_name: string | null; response: string | null }[] = [];
+          for (const sm of subMats || []) {
+            const mat = (sm as unknown as { material: { id: string; title: string; client: { full_name: string } | null } | null }).material;
+            if (!mat) continue;
+            for (const pid of personIds) {
+              const personName = (peopleData || []).find((p) => p.id === pid)?.full_name || null;
+              materials.push({
+                title: mat.title,
+                client_name: mat.client?.full_name || null,
+                person_name: personName,
+                response: respMap[mat.id]?.[pid] || null,
+              });
+            }
+          }
+
+          setLinkedSubmission({
+            id: sub.id,
+            description: sub.description,
+            submission_date: sub.submission_date,
+            materials,
+          });
+        }
+      }
 
       setLoading(false);
     }
@@ -214,6 +280,48 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
         <ArrowLeft className="h-3.5 w-3.5" />
         Meetings
       </Link>
+
+      {/* Linked Submission Context */}
+      {linkedSubmission && (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/30 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Send className="h-3.5 w-3.5 text-blue-600" />
+            <span className="text-xs font-medium text-blue-800">From Submission</span>
+            <Link
+              href={`/submissions/${linkedSubmission.id}`}
+              className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+            >
+              {linkedSubmission.description}
+              {linkedSubmission.submission_date && ` · ${new Date(linkedSubmission.submission_date).toLocaleDateString()}`}
+            </Link>
+          </div>
+          {linkedSubmission.materials.length > 0 && (
+            <div className="space-y-1 ml-5">
+              {linkedSubmission.materials.map((m, i) => (
+                <div key={i} className="flex items-center gap-2 text-xs">
+                  <span className="text-blue-900 font-medium">{m.client_name || "—"}</span>
+                  <span className="text-blue-700">→</span>
+                  <span className="text-blue-800">{m.title}</span>
+                  <span className="text-blue-700">→</span>
+                  <span className="text-blue-700">{m.person_name || "—"}</span>
+                  {m.response ? (
+                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                      m.response === "love" ? "bg-emerald-100 text-emerald-700" :
+                      m.response === "like" ? "bg-blue-100 text-blue-700" :
+                      m.response === "meh" ? "bg-amber-100 text-amber-700" :
+                      "bg-red-100 text-red-700"
+                    }`}>
+                      {m.response.charAt(0).toUpperCase() + m.response.slice(1)}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-blue-400">No response</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
