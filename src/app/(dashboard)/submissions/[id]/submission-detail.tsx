@@ -374,13 +374,16 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
     updateRow(idx, { response: value });
     if (row.materialId && row.personId) {
       if (value) {
-        await supabase.from("material_responses").upsert(
+        const { error } = await supabase.from("material_responses").upsert(
           { material_id: row.materialId, person_id: row.personId, response: value },
           { onConflict: "material_id,person_id" }
         );
+        if (error) console.error("Response upsert error:", error);
       } else {
-        await supabase.from("material_responses").delete()
+        const { error } = await supabase.from("material_responses")
+          .update({ response: null })
           .eq("material_id", row.materialId).eq("person_id", row.personId);
+        if (error) console.error("Response clear error:", error);
       }
     }
   }
