@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, ExternalLink, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   MultiRelationPicker,
@@ -66,7 +66,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
     title: string;
     client_name: string | null;
   }[]>([]);
-  const [materialResponses, setMaterialResponses] = useState<Record<string, Record<string, string>>>({});
+  const [responseRows, setResponseRows] = useState<{ materialId: string; personId: string; response: string }[]>([]);
   const [allMaterials, setAllMaterials] = useState<{ id: string; title: string; client_name: string | null }[]>([]);
   const [showMaterialPicker, setShowMaterialPicker] = useState(false);
 
@@ -128,21 +128,27 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         .filter(Boolean) as { id: string; title: string; client_name: string | null }[];
       setSubmissionMaterials(mats);
 
-      // Fetch material responses
+      // Fetch material responses → build responseRows
       const matIds = mats.map((m) => m.id);
       if (matIds.length > 0) {
         const { data: respData } = await supabase
           .from("material_responses")
           .select("material_id, person_id, response")
           .in("material_id", matIds);
-        const respMap: Record<string, Record<string, string>> = {};
+        const rows: typeof responseRows = [];
         for (const r of respData || []) {
-          if (!respMap[r.material_id]) respMap[r.material_id] = {};
-          respMap[r.material_id][r.person_id] = r.response;
+          rows.push({ materialId: r.material_id, personId: r.person_id, response: r.response || "" });
         }
-        setMaterialResponses(respMap);
+        // For materials with no responses yet, add one empty row
+        for (const m of mats) {
+          if (!rows.some((r) => r.materialId === m.id)) {
+            rows.push({ materialId: m.id, personId: "", response: "" });
+          }
+        }
+        setResponseRows(rows);
       } else {
-        setMaterialResponses({});
+        // No materials — empty
+        setResponseRows(mats.map((m) => ({ materialId: m.id, personId: "", response: "" })));
       }
 
       setForm({
@@ -179,23 +185,15 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
     [projectList]
   );
 
-  // Build material × person table rows
-  const materialRows = useMemo(() => {
-    const rows: { materialId: string; materialTitle: string; clientName: string | null; personId: string; personName: string }[] = [];
-    for (const mat of submissionMaterials) {
-      for (const pid of form.person_ids) {
-        const personName = personOptions.find((p) => p.id === pid)?.label || "Unknown";
-        rows.push({
-          materialId: mat.id,
-          materialTitle: mat.title,
-          clientName: mat.client_name,
-          personId: pid,
-          personName,
-        });
-      }
+  // Group responseRows by material for rendering
+  const groupedRows = useMemo(() => {
+    const groups: Record<string, typeof responseRows> = {};
+    for (const row of responseRows) {
+      if (!groups[row.materialId]) groups[row.materialId] = [];
+      groups[row.materialId].push(row);
     }
-    return rows;
-  }, [submissionMaterials, form.person_ids, personOptions]);
+    return groups;
+  }, [responseRows]);
 
   const createProject = useCallback(async (name: string): Promise<RelationOption | null> => {
     const { data, error } = await supabase
@@ -213,34 +211,35 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
     return { id: name, label: name };
   }, []);
 
-  const handleResponseChange = useCallback(async (materialId: string, personId: string, value: string) => {
-    // Update local state immediately
-    setMaterialResponses((prev) => {
-      const copy = { ...prev };
-      if (!copy[materialId]) copy[materialId] = {};
-      if (value) {
-        copy[materialId] = { ...copy[materialId], [personId]: value };
-      } else {
-        const inner = { ...copy[materialId] };
-        delete inner[personId];
-        copy[materialId] = inner;
-      }
-      return copy;
-    });
+  function updateResponseRow(index: number, patch: Partial<typeof responseRows[0]>) {
+    setResponseRows((prev) => prev.map((r, i) => i === index ? { ...r, ...patch } : r));
+  }
 
-    // Upsert to DB immediately
-    if (value) {
+  function addResponseRow(materialId: string) {
+    setResponseRows((prev) => [...prev, { materialId, personId: "", response: "" }]);
+  }
+
+  function removeResponseRow(index: number) {
+    const row = responseRows[index];
+    // Delete from DB if it had a person+response
+    if (row.personId && row.response) {
+      supabase.from("material_responses").delete().eq("material_id", row.materialId).eq("person_id", row.personId);
+    }
+    setResponseRows((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleResponseChange(index: number, field: "personId" | "response", value: string) {
+    const row = { ...responseRows[index], [field]: value };
+    updateResponseRow(index, { [field]: value });
+
+    // Upsert when both person and response are set
+    if (row.personId && row.response) {
       await supabase.from("material_responses").upsert(
-        { material_id: materialId, person_id: personId, response: value },
+        { material_id: row.materialId, person_id: row.personId, response: row.response },
         { onConflict: "material_id,person_id" }
       );
-    } else {
-      await supabase.from("material_responses")
-        .delete()
-        .eq("material_id", materialId)
-        .eq("person_id", personId);
     }
-  }, [supabase]);
+  }
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -415,7 +414,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         {/* Materials Table */}
         <Field label="Materials">
           <div className="space-y-3">
-            {materialRows.length > 0 && (
+            {submissionMaterials.length > 0 && (
               <div className="overflow-x-auto rounded-md border border-zinc-200">
                 <table className="w-full text-sm">
                   <thead>
@@ -425,50 +424,88 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
                       <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Date</th>
                       <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Person</th>
                       <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Response</th>
-                      <th className="px-3 py-2 w-8"></th>
+                      <th className="px-3 py-2 w-16"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {materialRows.map((row) => {
-                      const resp = materialResponses[row.materialId]?.[row.personId] || "";
-                      // Show remove button only on first person row for each material
-                      const isFirstPersonForMaterial = form.person_ids.indexOf(row.personId) === 0;
-                      return (
-                        <tr key={`${row.materialId}-${row.personId}`} className="border-b border-zinc-100 last:border-0">
-                          <td className="px-3 py-2 text-zinc-600">{row.clientName || "\u2014"}</td>
-                          <td className="px-3 py-2">
-                            <Link href={`/materials/${row.materialId}`} className="text-black hover:underline">
-                              {row.materialTitle}
-                            </Link>
-                          </td>
-                          <td className="px-3 py-2 text-zinc-500">{form.submission_date || "\u2014"}</td>
-                          <td className="px-3 py-2">
-                            <Link href={`/contacts/${row.personId}`} className="text-black hover:underline">
-                              {row.personName}
-                            </Link>
-                          </td>
-                          <td className="px-3 py-2">
-                            <select
-                              value={resp}
-                              onChange={(e) => handleResponseChange(row.materialId, row.personId, e.target.value)}
-                              className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
-                            >
-                              <option value="">&mdash;</option>
-                              <option value="love">Love</option>
-                              <option value="like">Like</option>
-                              <option value="meh">Meh</option>
-                              <option value="hate">Hate</option>
-                            </select>
-                          </td>
-                          <td className="px-3 py-2">
-                            {isFirstPersonForMaterial && (
-                              <button
-                                onClick={() => setSubmissionMaterials((prev) => prev.filter((m) => m.id !== row.materialId))}
-                                className="text-xs text-zinc-400 hover:text-red-500 transition-colors"
+                    {submissionMaterials.map((mat) => {
+                      const rows = groupedRows[mat.id] || [];
+                      return rows.map((row, rowIdx) => {
+                        const globalIdx = responseRows.indexOf(row);
+                        const isFirst = rowIdx === 0;
+                        return (
+                          <tr key={`${mat.id}-${rowIdx}`} className="border-b border-zinc-100 last:border-0">
+                            <td className="px-3 py-2 text-xs text-zinc-600">{isFirst ? (mat.client_name || "\u2014") : ""}</td>
+                            <td className="px-3 py-2 text-xs">
+                              {isFirst ? (
+                                <Link href={`/materials/${mat.id}`} className="text-black hover:underline">{mat.title}</Link>
+                              ) : ""}
+                            </td>
+                            <td className="px-3 py-2 text-xs text-zinc-500">{isFirst ? (form.submission_date || "\u2014") : ""}</td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-1">
+                                <select
+                                  value={row.personId}
+                                  onChange={(e) => handleResponseChange(globalIdx, "personId", e.target.value)}
+                                  className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
+                                >
+                                  <option value="">Select person...</option>
+                                  {form.person_ids.map((pid) => {
+                                    const name = personOptions.find((p) => p.id === pid)?.label || pid;
+                                    return <option key={pid} value={pid}>{name}</option>;
+                                  })}
+                                </select>
+                                {row.personId && (
+                                  <Link href={`/contacts/${row.personId}`} className="shrink-0 text-zinc-400 hover:text-black transition-colors" title="View contact">
+                                    <ExternalLink className="h-3 w-3" />
+                                  </Link>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2">
+                              <select
+                                value={row.response}
+                                onChange={(e) => handleResponseChange(globalIdx, "response", e.target.value)}
+                                className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
                               >
-                                Remove
-                              </button>
-                            )}
+                                <option value="">&mdash;</option>
+                                <option value="love">Love</option>
+                                <option value="like">Like</option>
+                                <option value="meh">Meh</option>
+                                <option value="hate">Hate</option>
+                              </select>
+                            </td>
+                            <td className="px-3 py-2 text-xs">
+                              <div className="flex items-center gap-1">
+                                {!isFirst && (
+                                  <button onClick={() => removeResponseRow(globalIdx)} className="text-zinc-400 hover:text-red-500 transition-colors">✕</button>
+                                )}
+                                {isFirst && (
+                                  <button
+                                    onClick={() => {
+                                      setSubmissionMaterials((prev) => prev.filter((m) => m.id !== mat.id));
+                                      setResponseRows((prev) => prev.filter((r) => r.materialId !== mat.id));
+                                    }}
+                                    className="text-zinc-400 hover:text-red-500 transition-colors text-[10px]"
+                                  >
+                                    Remove
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }).concat(
+                        // Add response row button
+                        <tr key={`${mat.id}-add`} className="border-b border-zinc-100 last:border-0">
+                          <td colSpan={6} className="px-3 py-1">
+                            <button
+                              onClick={() => addResponseRow(mat.id)}
+                              className="inline-flex items-center gap-1 text-[11px] text-zinc-400 hover:text-black transition-colors"
+                            >
+                              <Plus className="h-3 w-3" />
+                              Add response
+                            </button>
                           </td>
                         </tr>
                       );
@@ -476,11 +513,6 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
                   </tbody>
                 </table>
               </div>
-            )}
-
-            {/* Materials with no people yet */}
-            {submissionMaterials.length > 0 && form.person_ids.length === 0 && (
-              <div className="text-xs text-zinc-400 italic">Add people to see material response rows.</div>
             )}
 
             {showMaterialPicker ? (
