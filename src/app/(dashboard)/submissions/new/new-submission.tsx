@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, Plus, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
+  RelationPicker,
   MultiRelationPicker,
   type RelationOption,
 } from "@/components/shared/relation-picker";
@@ -140,6 +141,30 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
     return { id: name, label: name };
   }, []);
 
+  const searchPeople = useCallback(async (query: string): Promise<RelationOption[]> => {
+    const { data } = await supabase
+      .from("people")
+      .select("id, full_name")
+      .ilike("full_name", `%${query}%`)
+      .order("full_name")
+      .limit(15);
+    return (data || []).map((p) => ({ id: p.id, label: p.full_name }));
+  }, [supabase]);
+
+  const addNewPerson = useCallback(async (name: string): Promise<RelationOption | null> => {
+    const parts = name.split(" ");
+    const first_name = parts[0] || name;
+    const last_name = parts.slice(1).join(" ") || null;
+    const { data, error } = await supabase
+      .from("people")
+      .insert({ full_name: name, first_name, last_name, department: [] })
+      .select("id, full_name")
+      .single();
+    if (error || !data) return null;
+    setPeople((prev) => [...prev, { id: data.id, full_name: data.full_name }].sort((a, b) => a.full_name.localeCompare(b.full_name)));
+    return { id: data.id, label: data.full_name };
+  }, [supabase]);
+
   function updateRow(idx: number, patch: Partial<MaterialRow>) {
     setMaterialRows((prev) => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
   }
@@ -178,9 +203,10 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
     ]);
   }
 
-  function handlePersonSelect(idx: number, personId: string) {
+  function handlePersonSelect(idx: number, personId: string | null) {
+    if (!personId) { updateRow(idx, { personId: "" }); return; }
     updateRow(idx, { personId });
-    if (personId && !form.person_ids.includes(personId)) {
+    if (!form.person_ids.includes(personId)) {
       setForm((prev) => ({ ...prev, person_ids: [...prev.person_ids, personId] }));
     }
   }
@@ -411,17 +437,21 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex items-center gap-1">
-                          <select
-                            value={row.personId}
-                            onChange={(e) => handlePersonSelect(idx, e.target.value)}
-                            className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
-                          >
-                            <option value="">Select person...</option>
-                            {form.person_ids.map((pid) => {
-                              const name = personOptions.find((p) => p.id === pid)?.label || pid;
-                              return <option key={pid} value={pid}>{name}</option>;
-                            })}
-                          </select>
+                          <div className="flex-1 min-w-[140px]">
+                            <RelationPicker
+                              value={row.personId || null}
+                              onChange={(id) => handlePersonSelect(idx, id)}
+                              options={form.person_ids.map((pid) => ({
+                                id: pid,
+                                label: personOptions.find((p) => p.id === pid)?.label || "",
+                              }))}
+                              onSearch={searchPeople}
+                              onAdd={addNewPerson}
+                              addLabel="Add contact"
+                              selectedLabel={row.personId ? (personOptions.find((p) => p.id === row.personId)?.label || people.find((p) => p.id === row.personId)?.full_name) : undefined}
+                              placeholder="Search people..."
+                            />
+                          </div>
                           {row.personId && (
                             <Link href={`/contacts/${row.personId}`} className="shrink-0 text-zinc-400 hover:text-black transition-colors" title="View contact">
                               <ExternalLink className="h-3 w-3" />
