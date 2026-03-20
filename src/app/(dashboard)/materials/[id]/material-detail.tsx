@@ -397,48 +397,48 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
           </Field>
         )}
 
-        <Field label="Material Type">
-          <Select
-            value={form.material_type}
-            onChange={(e) => setForm({ ...form, material_type: e.target.value as MaterialType })}
-            options={MATERIAL_TYPES}
-          />
-        </Field>
-
-        <Field label="Format">
-          <Select
-            value={form.format || ""}
-            onChange={(e) => setForm({ ...form, format: e.target.value || null })}
-            options={FORMATS}
-            placeholder="Select format..."
-          />
-        </Field>
-
-        <Field label="Genre">
-          <Select
-            value={form.genre || ""}
-            onChange={(e) => setForm({ ...form, genre: e.target.value || null })}
-            options={GENRES}
-            placeholder="Select genre..."
-          />
-        </Field>
-
-        <Field label="Sub-genre">
-          <MultiRelationPicker
-            value={Array.isArray(form.sub_genre) ? form.sub_genre : []}
-            onChange={(ids) => setForm({ ...form, sub_genre: ids })}
-            options={SUB_GENRES}
-            placeholder="Select sub-genres..."
-          />
-        </Field>
-
-        <Field label="Status">
-          <Select
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value as MaterialStatus })}
-            options={STATUSES}
-          />
-        </Field>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Type">
+            <Select
+              value={form.material_type}
+              onChange={(e) => setForm({ ...form, material_type: e.target.value as MaterialType })}
+              options={MATERIAL_TYPES}
+            />
+          </Field>
+          <Field label="Format">
+            <Select
+              value={form.format || ""}
+              onChange={(e) => setForm({ ...form, format: e.target.value || null })}
+              options={FORMATS}
+              placeholder="Select..."
+            />
+          </Field>
+          <Field label="Status">
+            <Select
+              value={form.status}
+              onChange={(e) => setForm({ ...form, status: e.target.value as MaterialStatus })}
+              options={STATUSES}
+            />
+          </Field>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Genre">
+            <Select
+              value={form.genre || ""}
+              onChange={(e) => setForm({ ...form, genre: e.target.value || null })}
+              options={GENRES}
+              placeholder="Select..."
+            />
+          </Field>
+          <Field label="Sub-genre">
+            <MultiRelationPicker
+              value={Array.isArray(form.sub_genre) ? form.sub_genre : []}
+              onChange={(ids) => setForm({ ...form, sub_genre: ids })}
+              options={SUB_GENRES}
+              placeholder="Select..."
+            />
+          </Field>
+        </div>
 
         <Field label="Box File">
           {form.box_file_id ? (
