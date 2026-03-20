@@ -24,7 +24,7 @@ import {
   type AddressRecord,
   type SocialRecord,
 } from "@/components/shared/contact-info-editor";
-import type { PersonType, ExecLevel } from "@/types/database";
+import type { PersonType, ExecLevel, BuyerType } from "@/types/database";
 
 interface CompanyData {
   id: string;
@@ -52,6 +52,15 @@ const EXEC_LEVELS: { value: ExecLevel; label: string }[] = [
   { value: "chair", label: "Chair" },
 ];
 
+const BUYER_TYPES: { value: BuyerType; label: string }[] = [
+  { value: "Pod", label: "Pod" },
+  { value: "Studio", label: "Studio" },
+  { value: "Network", label: "Network" },
+  { value: "Streamer", label: "Streamer" },
+  { value: "Production Company", label: "Production Company" },
+  { value: "Other", label: "Other" },
+];
+
 const emptyForm = {
   full_name: "",
   first_name: null as string | null,
@@ -59,6 +68,7 @@ const emptyForm = {
   title: null as string | null,
   type: null as PersonType | null,
   exec_level: null as ExecLevel | null,
+  buyer_type: null as BuyerType | null,
   company_id: null as string | null,
   department: [] as string[],
   assistant_id: null as string | null,
@@ -210,6 +220,14 @@ export function NewContact({ userId }: NewContactProps) {
             />
           </Field>
         </div>
+        <Field label="Buyer Type">
+          <Select
+            value={form.buyer_type || ""}
+            onChange={(e) => setForm({ ...form, buyer_type: (e.target.value || null) as BuyerType | null })}
+            options={BUYER_TYPES}
+            placeholder="Not a buyer"
+          />
+        </Field>
 
         <PhoneSection phones={phones} onChange={setPhones} />
         <EmailSection emails={emails} onChange={setEmails} />
