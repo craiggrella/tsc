@@ -18,8 +18,6 @@ const STATUSES: { value: SubmissionStatus; label: string }[] = [
   { value: "connected", label: "Connected" },
 ];
 
-const RESPONSE_OPTIONS = ["love", "like", "meh", "hate"] as const;
-
 const DEFAULT_REASONS = [
   "General",
   "Meeting",
@@ -29,6 +27,23 @@ const DEFAULT_REASONS = [
   "Development",
 ];
 
+function genKey() {
+  return Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+function todayDate() {
+  return new Date().toISOString().split("T")[0];
+}
+
+interface MaterialRow {
+  key: string;
+  clientId: string;
+  materialId: string;
+  personId: string;
+  response: string;
+  date: string;
+}
+
 const emptyForm = {
   description: "",
   status: "need_to_send" as SubmissionStatus,
@@ -36,7 +51,6 @@ const emptyForm = {
   submission_date: null as string | null,
   set_meeting: false,
   notes: null as string | null,
-  client_ids: [] as string[],
   person_ids: [] as string[],
   project_ids: [] as string[],
 };
@@ -55,20 +69,15 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
   const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const [clients, setClients] = useState<{ id: string; full_name: string }[]>([]);
   const [people, setPeople] = useState<{ id: string; full_name: string }[]>([]);
   const [projectList, setProjectList] = useState<{ id: string; name: string }[]>([]);
   const [reasonList, setReasonList] = useState(DEFAULT_REASONS);
 
-  // Materials state
-  const [submissionMaterials, setSubmissionMaterials] = useState<{
-    id: string;
-    title: string;
-    client_name: string | null;
-  }[]>([]);
-  const [responseRows, setResponseRows] = useState<{ materialId: string; personId: string; response: string }[]>([]);
-  const [allMaterials, setAllMaterials] = useState<{ id: string; title: string; client_name: string | null }[]>([]);
-  const [showMaterialPicker, setShowMaterialPicker] = useState(false);
+  // Materials table state
+  const [materialRows, setMaterialRows] = useState<MaterialRow[]>([]);
+  const [allClients, setAllClients] = useState<{ id: string; full_name: string }[]>([]);
+  const [allMaterialsByClient, setAllMaterialsByClient] = useState<Record<string, { id: string; title: string }[]>>({});
+  const [allMaterialsFlat, setAllMaterialsFlat] = useState<{ id: string; title: string }[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -77,7 +86,6 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         { data: clientsData },
         { data: peopleData },
         { data: projectsData },
-        { data: sc },
         { data: sp },
         { data: spr },
         { data: smData },
@@ -87,11 +95,10 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         supabase.from("clients").select("id, full_name").order("full_name"),
         supabase.from("people").select("id, full_name").order("full_name"),
         supabase.from("projects").select("id, name").order("name"),
-        supabase.from("submission_clients").select("client_id").eq("submission_id", submissionId),
         supabase.from("submission_people").select("person_id").eq("submission_id", submissionId),
         supabase.from("submission_projects").select("project_id").eq("submission_id", submissionId),
-        supabase.from("submission_materials").select("material:client_materials(id, title, client:clients!client_id(full_name))").eq("submission_id", submissionId),
-        supabase.from("client_materials").select("id, title, client:clients!client_id(full_name)").order("title"),
+        supabase.from("submission_materials").select("material:client_materials(id, title, client_id, client:clients!client_id(full_name))").eq("submission_id", submissionId),
+        supabase.from("client_materials").select("id, title, client_id").order("title"),
       ]);
 
       if (!sub) {
@@ -99,16 +106,24 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         return;
       }
 
-      setClients(clientsData || []);
+      setAllClients(clientsData || []);
       setPeople(peopleData || []);
       setProjectList(projectsData || []);
-      setAllMaterials(
-        (allMatsData || []).map((m: Record<string, unknown>) => ({
-          id: m.id as string,
-          title: m.title as string,
-          client_name: (m.client as { full_name: string } | null)?.full_name || null,
-        }))
-      );
+
+      // Build allMaterialsByClient and allMaterialsFlat
+      const byClient: Record<string, { id: string; title: string }[]> = {};
+      const flat: { id: string; title: string }[] = [];
+      for (const m of allMatsData || []) {
+        const item = { id: m.id as string, title: m.title as string };
+        flat.push(item);
+        const cid = m.client_id as string;
+        if (cid) {
+          if (!byClient[cid]) byClient[cid] = [];
+          byClient[cid].push(item);
+        }
+      }
+      setAllMaterialsByClient(byClient);
+      setAllMaterialsFlat(flat);
 
       // Add any reasons from this record that aren't in our list
       if (sub.reason) {
@@ -119,47 +134,63 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         });
       }
 
+      const personIds = (sp || []).map((r) => r.person_id);
+      const submissionDate = sub.submission_date || todayDate();
+
+      // Build materialRows from existing submission_materials + responses
       const mats = (smData || [])
         .map((r: Record<string, unknown>) => {
-          const mat = r.material as { id: string; title: string; client: { full_name: string } | null } | null;
+          const mat = r.material as { id: string; title: string; client_id: string; client: { full_name: string } | null } | null;
           if (!mat) return null;
-          return { id: mat.id, title: mat.title, client_name: mat.client?.full_name || null };
+          return { id: mat.id, title: mat.title, clientId: mat.client_id || "", clientName: mat.client?.full_name || "" };
         })
-        .filter(Boolean) as { id: string; title: string; client_name: string | null }[];
-      setSubmissionMaterials(mats);
+        .filter(Boolean) as { id: string; title: string; clientId: string; clientName: string }[];
 
-      // Fetch material responses → build responseRows
       const matIds = mats.map((m) => m.id);
+      let respData: { material_id: string; person_id: string; response: string }[] = [];
       if (matIds.length > 0) {
-        const { data: respData } = await supabase
+        const { data } = await supabase
           .from("material_responses")
           .select("material_id, person_id, response")
           .in("material_id", matIds);
-        const rows: typeof responseRows = [];
-        for (const r of respData || []) {
-          rows.push({ materialId: r.material_id, personId: r.person_id, response: r.response || "" });
-        }
-        // For materials with no responses yet, add one empty row
-        for (const m of mats) {
-          if (!rows.some((r) => r.materialId === m.id)) {
-            rows.push({ materialId: m.id, personId: "", response: "" });
-          }
-        }
-        setResponseRows(rows);
-      } else {
-        // No materials — empty
-        setResponseRows(mats.map((m) => ({ materialId: m.id, personId: "", response: "" })));
+        respData = data || [];
       }
+
+      const rows: MaterialRow[] = [];
+      for (const mat of mats) {
+        const matResps = respData.filter((r) => r.material_id === mat.id);
+        if (matResps.length > 0) {
+          for (const resp of matResps) {
+            rows.push({
+              key: genKey(),
+              clientId: mat.clientId,
+              materialId: mat.id,
+              personId: resp.person_id,
+              response: resp.response || "",
+              date: submissionDate,
+            });
+          }
+        } else {
+          rows.push({
+            key: genKey(),
+            clientId: mat.clientId,
+            materialId: mat.id,
+            personId: personIds.length === 1 ? personIds[0] : "",
+            response: "",
+            date: submissionDate,
+          });
+        }
+      }
+      setMaterialRows(rows);
 
       setForm({
         description: sub.description,
         status: sub.status,
         reason: sub.reason,
-        submission_date: sub.submission_date,
+        submission_date: sub.submission_date || todayDate(),
         set_meeting: sub.set_meeting,
         notes: sub.notes,
-        client_ids: (sc || []).map((r) => r.client_id),
-        person_ids: (sp || []).map((r) => r.person_id),
+        person_ids: personIds,
         project_ids: (spr || []).map((r) => r.project_id),
       });
 
@@ -168,10 +199,6 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
     load();
   }, [submissionId]);
 
-  const clientOptions: RelationOption[] = useMemo(
-    () => clients.map((c) => ({ id: c.id, label: c.full_name })),
-    [clients]
-  );
   const personOptions: RelationOption[] = useMemo(
     () => people.map((p) => ({ id: p.id, label: p.full_name })),
     [people]
@@ -184,16 +211,6 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
     () => projectList.map((p) => ({ id: p.id, label: p.name })),
     [projectList]
   );
-
-  // Group responseRows by material for rendering
-  const groupedRows = useMemo(() => {
-    const groups: Record<string, typeof responseRows> = {};
-    for (const row of responseRows) {
-      if (!groups[row.materialId]) groups[row.materialId] = [];
-      groups[row.materialId].push(row);
-    }
-    return groups;
-  }, [responseRows]);
 
   const createProject = useCallback(async (name: string): Promise<RelationOption | null> => {
     const { data, error } = await supabase
@@ -211,41 +228,82 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
     return { id: name, label: name };
   }, []);
 
-  function updateResponseRow(index: number, patch: Partial<typeof responseRows[0]>) {
-    setResponseRows((prev) => prev.map((r, i) => i === index ? { ...r, ...patch } : r));
+  function updateRow(idx: number, patch: Partial<MaterialRow>) {
+    setMaterialRows((prev) => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
   }
 
-  function addResponseRow(materialId: string) {
-    setResponseRows((prev) => [...prev, { materialId, personId: "", response: "" }]);
-  }
-
-  function removeResponseRow(index: number) {
-    const row = responseRows[index];
-    // Delete from DB if it had a person+response
-    if (row.personId && row.response) {
+  function removeRow(idx: number) {
+    const row = materialRows[idx];
+    // Delete response from DB if it had person+response
+    if (row.materialId && row.personId && row.response) {
       supabase.from("material_responses").delete().eq("material_id", row.materialId).eq("person_id", row.personId);
     }
-    setResponseRows((prev) => prev.filter((_, i) => i !== index));
+    setMaterialRows((prev) => prev.filter((_, i) => i !== idx));
   }
 
-  async function handleResponseChange(index: number, field: "personId" | "response", value: string) {
-    const row = { ...responseRows[index], [field]: value };
-    updateResponseRow(index, { [field]: value });
+  function addMaterialRow() {
+    const autoPersonId = form.person_ids.length === 1 ? form.person_ids[0] : "";
+    setMaterialRows((prev) => [
+      ...prev,
+      {
+        key: genKey(),
+        clientId: "",
+        materialId: "",
+        personId: autoPersonId,
+        response: "",
+        date: form.submission_date || todayDate(),
+      },
+    ]);
+  }
 
-    // Upsert when both person and response are set
-    if (row.personId && row.response) {
-      await supabase.from("material_responses").upsert(
-        { material_id: row.materialId, person_id: row.personId, response: row.response },
-        { onConflict: "material_id,person_id" }
-      );
+  function addPersonRow(materialId: string) {
+    // Find an existing row for this material to copy clientId/date
+    const existing = materialRows.find((r) => r.materialId === materialId);
+    setMaterialRows((prev) => [
+      ...prev,
+      {
+        key: genKey(),
+        clientId: existing?.clientId || "",
+        materialId,
+        personId: "",
+        response: "",
+        date: existing?.date || form.submission_date || todayDate(),
+      },
+    ]);
+  }
+
+  function handlePersonSelect(idx: number, personId: string) {
+    updateRow(idx, { personId });
+    if (personId && !form.person_ids.includes(personId)) {
+      setForm((prev) => ({ ...prev, person_ids: [...prev.person_ids, personId] }));
+    }
+  }
+
+  async function handleResponseChange(idx: number, value: string) {
+    const row = materialRows[idx];
+    updateRow(idx, { response: value });
+    if (row.materialId && row.personId) {
+      if (value) {
+        await supabase.from("material_responses").upsert(
+          { material_id: row.materialId, person_id: row.personId, response: value },
+          { onConflict: "material_id,person_id" }
+        );
+      } else {
+        await supabase.from("material_responses").delete()
+          .eq("material_id", row.materialId).eq("person_id", row.personId);
+      }
     }
   }
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      // Auto-generate description from clients + people
-      const clientNames = form.client_ids.map((id) => clientOptions.find((c) => c.id === id)?.label).filter(Boolean);
+      // Derive client_ids from materialRows
+      const clientIds = [...new Set(materialRows.map((r) => r.clientId).filter(Boolean))];
+      const materialIds = [...new Set(materialRows.map((r) => r.materialId).filter(Boolean))];
+
+      // Auto-generate description from client names + people names
+      const clientNames = clientIds.map((id) => allClients.find((c) => c.id === id)?.full_name).filter(Boolean);
       const personNames = form.person_ids.map((id) => personOptions.find((p) => p.id === id)?.label).filter(Boolean);
       const autoDesc = [clientNames.join(", "), personNames.join(", ")].filter(Boolean).join(" — ") || "Submission";
 
@@ -265,11 +323,12 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         supabase.from("submission_clients").delete().eq("submission_id", submissionId),
         supabase.from("submission_people").delete().eq("submission_id", submissionId),
         supabase.from("submission_projects").delete().eq("submission_id", submissionId),
+        supabase.from("submission_materials").delete().eq("submission_id", submissionId),
       ]);
       await Promise.all([
-        form.client_ids.length > 0
+        clientIds.length > 0
           ? supabase.from("submission_clients").insert(
-              form.client_ids.map((id) => ({ submission_id: submissionId, client_id: id }))
+              clientIds.map((id) => ({ submission_id: submissionId, client_id: id }))
             )
           : Promise.resolve(),
         form.person_ids.length > 0
@@ -282,22 +341,19 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
               form.project_ids.map((id) => ({ submission_id: submissionId, project_id: id }))
             )
           : Promise.resolve(),
+        materialIds.length > 0
+          ? supabase.from("submission_materials").insert(
+              materialIds.map((id) => ({ submission_id: submissionId, material_id: id }))
+            )
+          : Promise.resolve(),
       ]);
-
-      // Sync submission_materials
-      await supabase.from("submission_materials").delete().eq("submission_id", submissionId);
-      if (submissionMaterials.length > 0) {
-        await supabase.from("submission_materials").insert(
-          submissionMaterials.map((m) => ({ submission_id: submissionId, material_id: m.id }))
-        );
-      }
 
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } finally {
       setSaving(false);
     }
-  }, [form, submissionId, supabase, submissionMaterials, clientOptions, personOptions]);
+  }, [form, submissionId, supabase, materialRows, allClients, personOptions]);
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Delete this submission?")) return;
@@ -309,6 +365,16 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
       setDeleting(false);
     }
   }, [submissionId, supabase, router]);
+
+  // Check if a row is the last row for its materialId (to show "+ Add Person")
+  function isLastRowForMaterial(idx: number): boolean {
+    const row = materialRows[idx];
+    if (!row.materialId) return false;
+    for (let i = materialRows.length - 1; i >= 0; i--) {
+      if (materialRows[i].materialId === row.materialId) return i === idx;
+    }
+    return false;
+  }
 
   if (loading) {
     return (
@@ -335,32 +401,55 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
           {form.description || "Untitled Submission"}
         </h1>
         <button
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-md bg-black px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-          >
-            {saving ? "Saving..." : saved ? "Saved \u2713" : "Save"}
-          </button>
+          onClick={handleSave}
+          disabled={saving}
+          className="rounded-md bg-black px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+        >
+          {saving ? "Saving..." : saved ? "Saved \u2713" : "Save"}
+        </button>
       </div>
 
       {/* Form */}
       <div className="space-y-5">
-        <Field label="Client">
-          <MultiRelationPicker
-            value={form.client_ids}
-            onChange={(ids) => setForm({ ...form, client_ids: ids })}
-            options={clientOptions}
-            placeholder="Select clients..."
-          />
-        </Field>
+        {/* 1. People (recipients) */}
         <Field label="People">
           <MultiRelationPicker
             value={form.person_ids}
             onChange={(ids) => setForm({ ...form, person_ids: ids })}
             options={personOptions}
-            placeholder="Select people..."
+            placeholder="Search people..."
           />
         </Field>
+
+        {/* 2. Status + Date + Reason — compact row */}
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Status">
+            <Select
+              value={form.status}
+              onChange={(e) => setForm({ ...form, status: e.target.value as SubmissionStatus })}
+              options={STATUSES}
+            />
+          </Field>
+          <Field label="Date">
+            <Input
+              type="date"
+              value={form.submission_date || ""}
+              onChange={(e) => setForm({ ...form, submission_date: e.target.value || null })}
+            />
+          </Field>
+          <Field label="Reason">
+            <MultiRelationPicker
+              value={form.reason}
+              onChange={(ids) => setForm({ ...form, reason: ids })}
+              options={reasonOptions}
+              placeholder="Select reasons..."
+              onAdd={createReason}
+              addLabel="Add reason"
+            />
+          </Field>
+        </div>
+
+        {/* 3. Projects */}
         <Field label="Projects">
           <MultiRelationPicker
             value={form.project_ids}
@@ -372,33 +461,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
           />
         </Field>
 
-        <Field label="Status">
-          <Select
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value as SubmissionStatus })}
-            options={STATUSES}
-          />
-        </Field>
-
-        <Field label="Reason">
-          <MultiRelationPicker
-            value={form.reason}
-            onChange={(ids) => setForm({ ...form, reason: ids })}
-            options={reasonOptions}
-            placeholder="Select reasons..."
-            onAdd={createReason}
-            addLabel="Add reason"
-          />
-        </Field>
-
-        <Field label="Submission Date">
-          <Input
-            type="date"
-            value={form.submission_date || ""}
-            onChange={(e) => setForm({ ...form, submission_date: e.target.value || null })}
-          />
-        </Field>
-
+        {/* 4. Set Meeting checkbox */}
         <Field label="Set Meeting">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -411,162 +474,134 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
           </label>
         </Field>
 
-        {/* Materials Table */}
-        <Field label="Materials">
+        {/* 5. Materials Submitted — THE MAIN TABLE */}
+        <Field label="Materials Submitted">
           <div className="space-y-3">
-            {submissionMaterials.length > 0 && (
-              <div className="overflow-x-auto rounded-md border border-zinc-200">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
-                      <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Client</th>
-                      <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Material</th>
-                      <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Date</th>
-                      <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Person</th>
-                      <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Response</th>
-                      <th className="px-3 py-2 w-16"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {submissionMaterials.map((mat) => {
-                      const rows = groupedRows[mat.id] || [];
-                      return rows.map((row, rowIdx) => {
-                        const globalIdx = responseRows.indexOf(row);
-                        const isFirst = rowIdx === 0;
-                        return (
-                          <tr key={`${mat.id}-${rowIdx}`} className="border-b border-zinc-100 last:border-0">
-                            <td className="px-3 py-2 text-xs text-zinc-600">{isFirst ? (mat.client_name || "\u2014") : ""}</td>
-                            <td className="px-3 py-2 text-xs">
-                              {isFirst ? (
-                                <Link href={`/materials/${mat.id}`} className="text-black hover:underline">{mat.title}</Link>
-                              ) : ""}
-                            </td>
-                            <td className="px-3 py-2 text-xs text-zinc-500">{isFirst ? (form.submission_date || "\u2014") : ""}</td>
-                            <td className="px-3 py-2">
-                              <div className="flex items-center gap-1">
-                                <select
-                                  value={row.personId}
-                                  onChange={(e) => handleResponseChange(globalIdx, "personId", e.target.value)}
-                                  className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
-                                >
-                                  <option value="">Select person...</option>
-                                  {form.person_ids.map((pid) => {
-                                    const name = personOptions.find((p) => p.id === pid)?.label || pid;
-                                    return <option key={pid} value={pid}>{name}</option>;
-                                  })}
-                                </select>
-                                {row.personId && (
-                                  <Link href={`/contacts/${row.personId}`} className="shrink-0 text-zinc-400 hover:text-black transition-colors" title="View contact">
-                                    <ExternalLink className="h-3 w-3" />
-                                  </Link>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2">
-                              <select
-                                value={row.response}
-                                onChange={(e) => handleResponseChange(globalIdx, "response", e.target.value)}
-                                className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
-                              >
-                                <option value="">&mdash;</option>
-                                <option value="love">Love</option>
-                                <option value="like">Like</option>
-                                <option value="meh">Meh</option>
-                                <option value="hate">Hate</option>
-                              </select>
-                            </td>
-                            <td className="px-3 py-2 text-xs">
-                              <div className="flex items-center gap-1">
-                                {!isFirst && (
-                                  <button onClick={() => removeResponseRow(globalIdx)} className="text-zinc-400 hover:text-red-500 transition-colors">✕</button>
-                                )}
-                                {isFirst && (
-                                  <button
-                                    onClick={() => {
-                                      setSubmissionMaterials((prev) => prev.filter((m) => m.id !== mat.id));
-                                      setResponseRows((prev) => prev.filter((r) => r.materialId !== mat.id));
-                                    }}
-                                    className="text-zinc-400 hover:text-red-500 transition-colors text-[10px]"
-                                  >
-                                    Remove
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      }).concat(
-                        // Add response row button
-                        <tr key={`${mat.id}-add`} className="border-b border-zinc-100 last:border-0">
-                          <td colSpan={6} className="px-3 py-1">
+            <div className="overflow-x-auto rounded-md border border-zinc-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
+                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Client</th>
+                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Material</th>
+                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Date</th>
+                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Person</th>
+                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Response</th>
+                    <th className="px-3 py-2 w-20"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {materialRows.map((row, idx) => (
+                    <tr key={row.key} className="border-b border-zinc-100 last:border-0">
+                      <td className="px-3 py-2">
+                        <select
+                          value={row.clientId}
+                          onChange={(e) => updateRow(idx, { clientId: e.target.value, materialId: "" })}
+                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none w-full"
+                        >
+                          <option value="">Select client...</option>
+                          {allClients.map((c) => (
+                            <option key={c.id} value={c.id}>{c.full_name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-2">
+                        <select
+                          value={row.materialId}
+                          onChange={(e) => updateRow(idx, { materialId: e.target.value })}
+                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none w-full"
+                        >
+                          <option value="">Select material...</option>
+                          {(allMaterialsByClient[row.clientId] || allMaterialsFlat).map((m) => (
+                            <option key={m.id} value={m.id}>{m.title}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-3 py-2">
+                        <input
+                          type="date"
+                          value={row.date}
+                          onChange={(e) => updateRow(idx, { date: e.target.value })}
+                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
+                        />
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="flex items-center gap-1">
+                          <select
+                            value={row.personId}
+                            onChange={(e) => handlePersonSelect(idx, e.target.value)}
+                            className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
+                          >
+                            <option value="">Select person...</option>
+                            {form.person_ids.map((pid) => {
+                              const name = personOptions.find((p) => p.id === pid)?.label || pid;
+                              return <option key={pid} value={pid}>{name}</option>;
+                            })}
+                          </select>
+                          {row.personId && (
+                            <Link href={`/contacts/${row.personId}`} className="shrink-0 text-zinc-400 hover:text-black transition-colors" title="View contact">
+                              <ExternalLink className="h-3 w-3" />
+                            </Link>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2">
+                        <select
+                          value={row.response}
+                          onChange={(e) => handleResponseChange(idx, e.target.value)}
+                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
+                        >
+                          <option value="">&mdash;</option>
+                          <option value="love">Love</option>
+                          <option value="like">Like</option>
+                          <option value="meh">Meh</option>
+                          <option value="hate">Hate</option>
+                        </select>
+                      </td>
+                      <td className="px-3 py-2 text-xs">
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => removeRow(idx)} className="text-zinc-400 hover:text-red-500 transition-colors">
+                            ✕
+                          </button>
+                          {row.materialId && isLastRowForMaterial(idx) && (
                             <button
-                              onClick={() => addResponseRow(mat.id)}
-                              className="inline-flex items-center gap-1 text-[11px] text-zinc-400 hover:text-black transition-colors"
+                              onClick={() => addPersonRow(row.materialId)}
+                              className="inline-flex items-center gap-0.5 text-[11px] text-zinc-400 hover:text-black transition-colors whitespace-nowrap"
                             >
                               <Plus className="h-3 w-3" />
-                              Add response
+                              Person
                             </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {materialRows.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-3 py-4 text-center text-xs text-zinc-400">
+                        No materials added yet
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
 
-            {showMaterialPicker ? (
-              <div className="space-y-1">
-                <select
-                  onChange={(e) => {
-                    const matId = e.target.value;
-                    if (!matId) return;
-                    const mat = allMaterials.find((m) => m.id === matId);
-                    if (mat && !submissionMaterials.find((m) => m.id === matId)) {
-                      setSubmissionMaterials((prev) => [...prev, mat]);
-                    }
-                    setShowMaterialPicker(false);
-                  }}
-                  className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 outline-none"
-                  defaultValue=""
-                >
-                  <option value="" disabled>Select a material...</option>
-                  {allMaterials
-                    .filter((m) => !submissionMaterials.find((em) => em.id === m.id))
-                    .map((m) => (
-                      <option key={m.id} value={m.id}>{m.client_name ? `${m.client_name} — ${m.title}` : m.title}</option>
-                    ))}
-                </select>
-                <button onClick={() => setShowMaterialPicker(false)} className="text-xs text-zinc-400 hover:text-zinc-600">Cancel</button>
-              </div>
-            ) : (
-              <button
-                onClick={() => {
-                  if (allMaterials.length === 0) {
-                    supabase.from("client_materials").select("id, title, client:clients!client_id(full_name)").order("title").then(({ data }) => {
-                      setAllMaterials(
-                        (data || []).map((m: Record<string, unknown>) => ({
-                          id: m.id as string,
-                          title: m.title as string,
-                          client_name: (m.client as { full_name: string } | null)?.full_name || null,
-                        }))
-                      );
-                    });
-                  }
-                  setShowMaterialPicker(true);
-                }}
-                className="text-xs text-zinc-500 hover:text-black transition-colors"
-              >
-                + Add Material
-              </button>
-            )}
+            <button
+              onClick={addMaterialRow}
+              className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-black transition-colors"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add Material
+            </button>
           </div>
         </Field>
 
+        {/* 6. Notes */}
         <Field label="Notes">
           <Textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value || null })} placeholder="Notes..." />
         </Field>
       </div>
+
       {/* Danger Zone */}
       <div className="mt-12 border-t border-zinc-200 pt-6">
         <p className="text-xs text-zinc-400 mb-3">Danger Zone</p>
