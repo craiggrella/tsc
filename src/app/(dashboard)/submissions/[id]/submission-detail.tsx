@@ -80,6 +80,16 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
   const [allMaterialsByClient, setAllMaterialsByClient] = useState<Record<string, { id: string; title: string }[]>>({});
   const [allMaterialsFlat, setAllMaterialsFlat] = useState<{ id: string; title: string }[]>([]);
 
+  // Meetings state
+  interface SubmissionMeetingRow {
+    key: string;
+    clientId: string;
+    personId: string;
+    meetingId: string | null;
+    status: string;
+  }
+  const [meetingRows, setMeetingRows] = useState<SubmissionMeetingRow[]>([]);
+
   useEffect(() => {
     async function load() {
       const [
@@ -184,6 +194,29 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
       }
       setMaterialRows(rows);
 
+      // Load linked meetings
+      const { data: smMeetingsData } = await supabase
+        .from("submission_meetings")
+        .select("meeting_id")
+        .eq("submission_id", submissionId);
+      if (smMeetingsData && smMeetingsData.length > 0) {
+        const meetingIds = smMeetingsData.map(s => s.meeting_id);
+        const { data: meetings } = await supabase
+          .from("meetings")
+          .select("id, title, meeting_status")
+          .in("id", meetingIds);
+        const { data: mc } = await supabase.from("meeting_clients").select("meeting_id, client_id").in("meeting_id", meetingIds);
+        const { data: mp } = await supabase.from("meeting_people").select("meeting_id, person_id").in("meeting_id", meetingIds);
+
+        const mtgRows: SubmissionMeetingRow[] = [];
+        for (const m of meetings || []) {
+          const clientId = mc?.find(c => c.meeting_id === m.id)?.client_id || "";
+          const personId = mp?.find(p => p.meeting_id === m.id)?.person_id || "";
+          mtgRows.push({ key: genKey(), clientId, personId, meetingId: m.id, status: m.meeting_status });
+        }
+        setMeetingRows(mtgRows);
+      }
+
       setForm({
         description: sub.description,
         status: sub.status,
@@ -252,6 +285,23 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
     setPeople((prev) => [...prev, { id: data.id, full_name: data.full_name }].sort((a, b) => a.full_name.localeCompare(b.full_name)));
     return { id: data.id, label: data.full_name };
   }, [supabase]);
+
+  function addMeetingRow() {
+    setMeetingRows(prev => [...prev, { key: genKey(), clientId: "", personId: "", meetingId: null, status: "need_to_set" }]);
+  }
+
+  function updateMeetingRow(idx: number, patch: Partial<SubmissionMeetingRow>) {
+    setMeetingRows(prev => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
+  }
+
+  function removeMeetingRow(idx: number) {
+    const row = meetingRows[idx];
+    if (row.meetingId) {
+      supabase.from("submission_meetings").delete().eq("meeting_id", row.meetingId).eq("submission_id", submissionId);
+      supabase.from("meetings").delete().eq("id", row.meetingId);
+    }
+    setMeetingRows(prev => prev.filter((_, i) => i !== idx));
+  }
 
   function updateRow(idx: number, patch: Partial<MaterialRow>) {
     setMaterialRows((prev) => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
@@ -342,44 +392,58 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         notes: form.notes || null,
       };
 
-      await supabase.from("submissions").update(payload).eq("id", submissionId);
+      const { error: updateError } = await supabase.from("submissions").update(payload).eq("id", submissionId);
+      if (updateError) { console.error("Save error:", updateError); return; }
 
-      // Sync join tables
+      // Sync join tables — delete all then re-insert
       await Promise.all([
         supabase.from("submission_clients").delete().eq("submission_id", submissionId),
         supabase.from("submission_people").delete().eq("submission_id", submissionId),
         supabase.from("submission_projects").delete().eq("submission_id", submissionId),
         supabase.from("submission_materials").delete().eq("submission_id", submissionId),
       ]);
-      await Promise.all([
-        clientIds.length > 0
-          ? supabase.from("submission_clients").insert(
-              clientIds.map((id) => ({ submission_id: submissionId, client_id: id }))
-            )
-          : Promise.resolve(),
-        form.person_ids.length > 0
-          ? supabase.from("submission_people").insert(
-              form.person_ids.map((id) => ({ submission_id: submissionId, person_id: id }))
-            )
-          : Promise.resolve(),
-        form.project_ids.length > 0
-          ? supabase.from("submission_projects").insert(
-              form.project_ids.map((id) => ({ submission_id: submissionId, project_id: id }))
-            )
-          : Promise.resolve(),
-        materialIds.length > 0
-          ? supabase.from("submission_materials").insert(
-              materialIds.map((id) => ({ submission_id: submissionId, material_id: id }))
-            )
-          : Promise.resolve(),
-      ]);
+
+      if (clientIds.length > 0)
+        await supabase.from("submission_clients").insert(clientIds.map((id) => ({ submission_id: submissionId, client_id: id })));
+      if (form.person_ids.length > 0)
+        await supabase.from("submission_people").insert(form.person_ids.map((id) => ({ submission_id: submissionId, person_id: id })));
+      if (form.project_ids.length > 0)
+        await supabase.from("submission_projects").insert(form.project_ids.map((id) => ({ submission_id: submissionId, project_id: id })));
+      if (materialIds.length > 0)
+        await supabase.from("submission_materials").insert(materialIds.map((id) => ({ submission_id: submissionId, material_id: id })));
+
+      // Save new meetings
+      for (const mRow of meetingRows) {
+        if (mRow.meetingId) continue;
+        if (!mRow.clientId || !mRow.personId) continue;
+
+        const clientName = allClients.find(c => c.id === mRow.clientId)?.full_name || "";
+        const personName = people.find(p => p.id === mRow.personId)?.full_name || personOptions.find(p => p.id === mRow.personId)?.label || "";
+        const title = `${clientName} — ${personName}`;
+
+        const { data: newMeeting } = await supabase
+          .from("meetings")
+          .insert({ title, meeting_status: "need_to_set" })
+          .select("id")
+          .single();
+
+        if (newMeeting) {
+          await Promise.all([
+            supabase.from("meeting_clients").insert({ meeting_id: newMeeting.id, client_id: mRow.clientId }),
+            supabase.from("meeting_people").insert({ meeting_id: newMeeting.id, person_id: mRow.personId }),
+            supabase.from("submission_meetings").insert({ submission_id: submissionId, meeting_id: newMeeting.id }),
+          ]);
+          mRow.meetingId = newMeeting.id;
+        }
+      }
+      setMeetingRows([...meetingRows]);
 
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } finally {
       setSaving(false);
     }
-  }, [form, submissionId, supabase, materialRows, allClients, personOptions]);
+  }, [form, submissionId, supabase, materialRows, allClients, personOptions, meetingRows, people]);
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Delete this submission?")) return;
@@ -487,20 +551,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
           />
         </Field>
 
-        {/* 4. Set Meeting checkbox */}
-        <Field label="Set Meeting">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={form.set_meeting}
-              onChange={(e) => setForm({ ...form, set_meeting: e.target.checked })}
-              className="accent-black"
-            />
-            <span className="text-sm text-zinc-600">Schedule a meeting</span>
-          </label>
-        </Field>
-
-        {/* 5. Materials Submitted — THE MAIN TABLE */}
+        {/* 4. Materials Submitted — THE MAIN TABLE */}
         <Field label="Materials Submitted">
           <div className="space-y-3">
             <div className="overflow-x-auto rounded-md border border-zinc-200">
@@ -625,6 +676,84 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
             </button>
           </div>
         </Field>
+
+        {/* 5. Meetings */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-medium text-zinc-500">Meetings</p>
+            <button onClick={addMeetingRow} className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-black transition-colors">
+              <Plus className="h-3 w-3" /> Meeting
+            </button>
+          </div>
+          {meetingRows.length > 0 && (
+            <div className="overflow-x-auto rounded-md border border-zinc-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
+                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Client</th>
+                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Meeting With</th>
+                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs w-24">Status</th>
+                    <th className="px-3 py-2 w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {meetingRows.map((mRow, idx) => (
+                    <tr key={mRow.key} className="border-b border-zinc-100 last:border-0">
+                      <td className="px-3 py-2">
+                        {mRow.meetingId ? (
+                          <Link href={`/meetings/${mRow.meetingId}`} className="text-xs text-black hover:underline">
+                            {allClients.find(c => c.id === mRow.clientId)?.full_name || "—"}
+                          </Link>
+                        ) : (
+                          <select value={mRow.clientId} onChange={e => updateMeetingRow(idx, { clientId: e.target.value })} className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs outline-none">
+                            <option value="">Select client...</option>
+                            {[...new Set(materialRows.map(r => r.clientId).filter(Boolean))].map(cid => {
+                              const name = allClients.find(c => c.id === cid)?.full_name;
+                              return name ? <option key={cid} value={cid}>{name}</option> : null;
+                            })}
+                            <option disabled>──────────</option>
+                            {allClients.filter(c => !materialRows.some(r => r.clientId === c.id)).map(c => (
+                              <option key={c.id} value={c.id}>{c.full_name}</option>
+                            ))}
+                          </select>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        {mRow.meetingId ? (
+                          <span className="text-xs text-zinc-700">{people.find(p => p.id === mRow.personId)?.full_name || personOptions.find(p => p.id === mRow.personId)?.label || "—"}</span>
+                        ) : (
+                          <div className="min-w-[140px]">
+                            <RelationPicker
+                              value={mRow.personId || null}
+                              onChange={(id) => updateMeetingRow(idx, { personId: id || "" })}
+                              options={form.person_ids.map(pid => ({ id: pid, label: personOptions.find(p => p.id === pid)?.label || "" }))}
+                              onSearch={searchPeople}
+                              onAdd={addNewPerson}
+                              addLabel="Add contact"
+                              selectedLabel={mRow.personId ? (personOptions.find(p => p.id === mRow.personId)?.label || people.find(p => p.id === mRow.personId)?.full_name) : undefined}
+                              placeholder="Search people..."
+                            />
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                          {mRow.meetingId ? mRow.status.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()) : "To Set"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2">
+                        <button onClick={() => removeMeetingRow(idx)} className="text-zinc-400 hover:text-red-500 transition-colors">✕</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {meetingRows.length === 0 && (
+            <p className="text-xs text-zinc-400">No meetings scheduled. Click + Meeting to add one.</p>
+          )}
+        </div>
 
         {/* 6. Notes */}
         <Field label="Notes">
