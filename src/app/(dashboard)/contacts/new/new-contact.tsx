@@ -1,0 +1,238 @@
+"use client";
+
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import {
+  RelationPicker,
+  type RelationOption,
+} from "@/components/shared/relation-picker";
+import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
+import {
+  PhoneSection,
+  EmailSection,
+  AddressSection,
+  SocialSection,
+  syncPhones,
+  syncEmails,
+  syncAddresses,
+  syncSocials,
+  type PhoneRecord,
+  type EmailRecord,
+  type AddressRecord,
+  type SocialRecord,
+} from "@/components/shared/contact-info-editor";
+import type { PersonType, ExecLevel } from "@/types/database";
+
+interface CompanyData {
+  id: string;
+  name: string;
+}
+
+const PERSON_TYPES: { value: PersonType; label: string }[] = [
+  { value: "contact", label: "Contact" },
+  { value: "potential_client", label: "Potential Client" },
+  { value: "vendor", label: "Vendor" },
+  { value: "assistant", label: "Assistant" },
+  { value: "executive", label: "Executive" },
+];
+
+const EXEC_LEVELS: { value: ExecLevel; label: string }[] = [
+  { value: "intern", label: "Intern" },
+  { value: "assistant", label: "Assistant" },
+  { value: "coordinator", label: "Coordinator" },
+  { value: "manager", label: "Manager" },
+  { value: "director", label: "Director" },
+  { value: "vice_president", label: "Vice President" },
+  { value: "senior_vice_president", label: "Senior VP" },
+  { value: "executive_vice_president", label: "Executive VP" },
+  { value: "president", label: "President" },
+  { value: "chair", label: "Chair" },
+];
+
+const emptyForm = {
+  full_name: "",
+  first_name: null as string | null,
+  last_name: null as string | null,
+  title: null as string | null,
+  type: null as PersonType | null,
+  exec_level: null as ExecLevel | null,
+  company_id: null as string | null,
+  department: [] as string[],
+  assistant_id: null as string | null,
+  notes: null as string | null,
+};
+
+interface NewContactProps {
+  userId: string;
+}
+
+export function NewContact({ userId }: NewContactProps) {
+  const supabase = createClient();
+  const router = useRouter();
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+
+  const [companies, setCompanies] = useState<CompanyData[]>([]);
+  const [contactPeople, setContactPeople] = useState<{ id: string; full_name: string }[]>([]);
+
+  // Sub-records
+  const [phones, setPhones] = useState<PhoneRecord[]>([]);
+  const [emails, setEmails] = useState<EmailRecord[]>([]);
+  const [addresses, setAddresses] = useState<AddressRecord[]>([]);
+  const [socials, setSocials] = useState<SocialRecord[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("companies").select("id, name").order("name"),
+      supabase.from("people").select("id, full_name").order("full_name"),
+    ]).then(([{ data: companiesData }, { data: peopleData }]) => {
+      setCompanies(companiesData || []);
+      setContactPeople(peopleData || []);
+    });
+  }, []);
+
+  const companyOptions: RelationOption[] = useMemo(
+    () => companies.map((c) => ({ id: c.id, label: c.name })),
+    [companies]
+  );
+
+  const assistantOptions: RelationOption[] = useMemo(
+    () => contactPeople.map((p) => ({ id: p.id, label: p.full_name })),
+    [contactPeople]
+  );
+
+  const handleSave = useCallback(async () => {
+    if (!form.full_name.trim()) return;
+    setSaving(true);
+    try {
+      const { data } = await supabase
+        .from("people")
+        .insert({ ...form })
+        .select("id")
+        .single();
+
+      if (data) {
+        await Promise.all([
+          syncPhones("person", data.id, phones, new Set()),
+          syncEmails("person", data.id, emails, new Set()),
+          syncAddresses("person", data.id, addresses, new Set()),
+          syncSocials("person", data.id, socials, new Set()),
+        ]);
+        router.push(`/contacts/${data.id}`);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }, [form, supabase, phones, emails, addresses, socials, router]);
+
+  return (
+    <div className="mx-auto max-w-4xl">
+      {/* Back link */}
+      <Link
+        href="/contacts"
+        className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-black transition-colors mb-4"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" />
+        Contacts
+      </Link>
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-xl font-semibold tracking-tight text-black">New Contact</h1>
+        <button
+          onClick={handleSave}
+          disabled={saving || !form.full_name.trim()}
+          className="rounded-md bg-black px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+        >
+          {saving ? "Saving..." : "Create Contact"}
+        </button>
+      </div>
+
+      {/* Form */}
+      <div className="space-y-5">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="First Name">
+            <Input
+              value={form.first_name || ""}
+              onChange={(e) => {
+                const first = e.target.value || null;
+                const full = [first, form.last_name].filter(Boolean).join(" ");
+                setForm({ ...form, first_name: first, full_name: full });
+              }}
+              placeholder="First"
+            />
+          </Field>
+          <Field label="Last Name">
+            <Input
+              value={form.last_name || ""}
+              onChange={(e) => {
+                const last = e.target.value || null;
+                const full = [form.first_name, last].filter(Boolean).join(" ");
+                setForm({ ...form, last_name: last, full_name: full });
+              }}
+              placeholder="Last"
+            />
+          </Field>
+        </div>
+        <Field label="Company">
+          <RelationPicker
+            value={form.company_id}
+            onChange={(id) => setForm({ ...form, company_id: id })}
+            options={companyOptions}
+            placeholder="Select company..."
+          />
+        </Field>
+        <Field label="Title">
+          <Input
+            value={form.title || ""}
+            onChange={(e) => setForm({ ...form, title: e.target.value || null })}
+            placeholder="Job title"
+          />
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Type">
+            <Select
+              value={form.type || ""}
+              onChange={(e) => setForm({ ...form, type: (e.target.value || null) as PersonType | null })}
+              options={PERSON_TYPES}
+              placeholder="Select..."
+            />
+          </Field>
+          <Field label="Level">
+            <Select
+              value={form.exec_level || ""}
+              onChange={(e) => setForm({ ...form, exec_level: (e.target.value || null) as ExecLevel | null })}
+              options={EXEC_LEVELS}
+              placeholder="Select..."
+            />
+          </Field>
+        </div>
+
+        <PhoneSection phones={phones} onChange={setPhones} />
+        <EmailSection emails={emails} onChange={setEmails} />
+        <AddressSection addresses={addresses} onChange={setAddresses} />
+        <SocialSection socials={socials} onChange={setSocials} />
+
+        <Field label="Assistant">
+          <RelationPicker
+            value={form.assistant_id}
+            onChange={(id) => setForm({ ...form, assistant_id: id })}
+            options={assistantOptions}
+            placeholder="Select assistant..."
+          />
+        </Field>
+
+        <Field label="Notes">
+          <Textarea
+            value={form.notes || ""}
+            onChange={(e) => setForm({ ...form, notes: e.target.value || null })}
+            placeholder="Notes..."
+          />
+        </Field>
+      </div>
+    </div>
+  );
+}

@@ -14,12 +14,14 @@ import {
   FolderOpen,
   Clapperboard,
   FileText,
+  Grid3X3,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { label: "Grid", href: "/grid", icon: Grid3X3 },
   { label: "Call Log", href: "/calls", icon: Phone },
   { label: "Meetings", href: "/meetings", icon: Calendar },
   { label: "Submissions", href: "/submissions", icon: Send },

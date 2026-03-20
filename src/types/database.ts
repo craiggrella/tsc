@@ -72,11 +72,20 @@ export interface Person {
   company_id: string | null;
   department: string[];
   assistant_id: string | null;
+  buyer_type: BuyerType | null;
   notes: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export type BuyerType =
+  | "Pod"
+  | "Studio"
+  | "Network"
+  | "Streamer"
+  | "Production Company"
+  | "Other";
 
 export type PersonType =
   | "contact"

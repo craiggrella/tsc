@@ -1,10 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { ContactsClient } from "./contacts-client";
+import { NewMeeting } from "./new-meeting";
 
-export default async function ContactsPage() {
+export default async function NewMeetingPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-  return <ContactsClient userId={user.id} />;
+  return <NewMeeting userId={user.id} />;
 }

@@ -1,10 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { ContactsClient } from "./contacts-client";
+import { GridClient } from "./grid-client";
 
-export default async function ContactsPage() {
+export default async function GridPage() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-  return <ContactsClient userId={user.id} />;
+  return <GridClient userId={user.id} />;
 }
