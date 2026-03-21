@@ -10,7 +10,7 @@ import {
   RelationPicker,
   type RelationOption,
 } from "@/components/shared/relation-picker";
-import { Field, Input, Textarea } from "@/components/shared/detail-panel";
+import { DetailPanel, Field, Input, Textarea } from "@/components/shared/detail-panel";
 import {
   PhoneSection,
   EmailSection,
@@ -134,6 +134,12 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   // Calls table
   const [callRows, setCallRows] = useState<CallTableRow[]>([]);
   const [callsLoaded, setCallsLoaded] = useState(false);
+  const [callPanelOpen, setCallPanelOpen] = useState(false);
+  const [selectedCall, setSelectedCall] = useState<{
+    id: string; call_status: string; priority: string | null; log_time: string | null;
+    due_date: string | null; notes: string | null; contact_name: string | null;
+    phone: string | null; email: string | null;
+  } | null>(null);
 
   // Client Grid state
   const [gridMetWith, setGridMetWith] = useState<{ id: string; full_name: string; company: string | null; buyer_type: string | null; meetingCount: number; lastMeeting: string | null }[]>([]);
@@ -348,6 +354,39 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     }
     loadSubmissions();
   }, [activeTab, submissionsLoaded, clientId, supabase]);
+
+  async function openCallPanel(callId: string) {
+    const { data: call } = await supabase
+      .from("calls")
+      .select("id, call_status, priority, log_time, due_date, notes, contact_id, contact:people!contact_id(full_name)")
+      .eq("id", callId)
+      .single();
+    if (!call) return;
+    const contact = (call as unknown as { contact: { full_name: string } | null }).contact;
+    // Fetch contact's primary phone + email
+    let phone: string | null = null;
+    let email: string | null = null;
+    if (call.contact_id) {
+      const [{ data: phones }, { data: emails }] = await Promise.all([
+        supabase.from("contact_phones").select("number").eq("entity_type", "person").eq("entity_id", call.contact_id).eq("is_primary", true).limit(1),
+        supabase.from("contact_emails").select("address").eq("entity_type", "person").eq("entity_id", call.contact_id).eq("is_primary", true).limit(1),
+      ]);
+      phone = phones?.[0]?.number || null;
+      email = emails?.[0]?.address || null;
+    }
+    setSelectedCall({
+      id: call.id,
+      call_status: call.call_status,
+      priority: call.priority,
+      log_time: call.log_time,
+      due_date: call.due_date,
+      notes: call.notes,
+      contact_name: contact?.full_name || null,
+      phone,
+      email,
+    });
+    setCallPanelOpen(true);
+  }
 
   // Lazy load calls tab
   useEffect(() => {
@@ -1141,9 +1180,9 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                       </td>
                       <td className="px-3 py-2.5 text-zinc-600">{c.contact_name || "\u2014"}</td>
                       <td className="px-3 py-2.5 text-center">
-                        <Link href={`/calls?open=${c.id}`} className="inline-flex text-zinc-400 hover:text-black transition-colors">
+                        <button onClick={() => openCallPanel(c.id)} className="inline-flex text-zinc-400 hover:text-black transition-colors">
                           <ExternalLink className="h-3.5 w-3.5" />
-                        </Link>
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -1165,6 +1204,58 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
           {deleting ? "Deleting..." : "Delete this client"}
         </button>
       </div>
+
+      {/* Call Detail Side Panel */}
+      <DetailPanel
+        open={callPanelOpen}
+        onClose={() => setCallPanelOpen(false)}
+        title={selectedCall?.contact_name ? `Call — ${selectedCall.contact_name}` : "Call Detail"}
+      >
+        {selectedCall && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <p className="text-[11px] font-medium text-zinc-400 mb-1">Status</p>
+                <StatusBadge status={selectedCall.call_status} />
+              </div>
+              <div>
+                <p className="text-[11px] font-medium text-zinc-400 mb-1">Priority</p>
+                <StatusBadge status={selectedCall.priority} />
+              </div>
+            </div>
+            {selectedCall.contact_name && (
+              <div>
+                <p className="text-[11px] font-medium text-zinc-400 mb-1">Contact</p>
+                <p className="text-sm text-black">{selectedCall.contact_name}</p>
+              </div>
+            )}
+            {selectedCall.phone && (
+              <div>
+                <p className="text-[11px] font-medium text-zinc-400 mb-1">Phone</p>
+                <p className="text-sm text-zinc-700">{selectedCall.phone}</p>
+              </div>
+            )}
+            {selectedCall.email && (
+              <div>
+                <p className="text-[11px] font-medium text-zinc-400 mb-1">Email</p>
+                <a href={`mailto:${selectedCall.email}`} className="text-sm text-zinc-700 hover:text-black">{selectedCall.email}</a>
+              </div>
+            )}
+            {selectedCall.log_time && (
+              <div>
+                <p className="text-[11px] font-medium text-zinc-400 mb-1">Logged</p>
+                <p className="text-sm text-zinc-700">{new Date(selectedCall.log_time).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</p>
+              </div>
+            )}
+            {selectedCall.notes && (
+              <div>
+                <p className="text-[11px] font-medium text-zinc-400 mb-1">Notes</p>
+                <p className="text-sm text-zinc-600 whitespace-pre-wrap">{selectedCall.notes}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </DetailPanel>
     </div>
   );
 }
