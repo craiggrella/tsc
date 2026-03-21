@@ -333,7 +333,6 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
                   <th className="px-2 py-2 text-left text-xs font-medium text-zinc-500">Project(s)</th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-zinc-500">Person</th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-zinc-500">Response</th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-zinc-500">Notes</th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-zinc-500 w-8"></th>
                 </tr>
               </thead>
@@ -370,25 +369,48 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
                           ))}
                         </select>
                       </td>
-                      <td className="px-2 py-2 min-w-[160px]">
-                        <MultiRelationPicker
-                          value={item.projectIds}
-                          onChange={(ids) => updateItem(idx, { projectIds: ids })}
-                          options={projects}
-                          placeholder="Projects..."
-                          onAdd={addProject}
-                          addLabel="Create"
-                        />
+                      <td className="px-2 py-2 min-w-[120px]">
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value && !item.projectIds.includes(e.target.value)) {
+                              updateItem(idx, { projectIds: [...item.projectIds, e.target.value] });
+                            }
+                            e.target.value = "";
+                          }}
+                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none w-full"
+                        >
+                          <option value="">{item.projectIds.length > 0 ? `${item.projectIds.length} project${item.projectIds.length > 1 ? "s" : ""}` : "Projects..."}</option>
+                          {projects.filter((p) => !item.projectIds.includes(p.id)).map((p) => (
+                            <option key={p.id} value={p.id}>{p.label}</option>
+                          ))}
+                        </select>
+                        {item.projectIds.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {item.projectIds.map((pid) => {
+                              const name = projects.find((p) => p.id === pid)?.label || "";
+                              return (
+                                <span key={pid} className="inline-flex items-center gap-0.5 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-700">
+                                  {name}
+                                  <button type="button" onClick={() => updateItem(idx, { projectIds: item.projectIds.filter((id) => id !== pid) })} className="text-zinc-400 hover:text-red-500">×</button>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
                       </td>
                       <td className="px-2 py-2 min-w-[160px]">
                         <RelationPicker
                           value={item.personId || null}
-                          onChange={(id) =>
-                            updateItem(idx, {
-                              personId: id || "",
-                              personLabel: id ? undefined : "",
-                            })
-                          }
+                          onChange={(id) => {
+                            if (!id) {
+                              updateItem(idx, { personId: "", personLabel: "" });
+                            } else {
+                              supabase.from("people").select("full_name").eq("id", id).single().then(({ data }) => {
+                                updateItem(idx, { personId: id, personLabel: data?.full_name || "" });
+                              });
+                            }
+                          }}
                           options={[]}
                           placeholder="Search person..."
                           onSearch={searchPeople}
@@ -409,14 +431,6 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
                             </option>
                           ))}
                         </select>
-                      </td>
-                      <td className="px-2 py-2 min-w-[120px]">
-                        <input
-                          value={item.notes}
-                          onChange={(e) => updateItem(idx, { notes: e.target.value })}
-                          placeholder="Notes..."
-                          className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs outline-none placeholder:text-zinc-400 hover:border-zinc-300 transition-colors"
-                        />
                       </td>
                       <td className="px-2 py-2">
                         <button
