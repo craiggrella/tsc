@@ -123,41 +123,24 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
 
       if (smLink && smLink.length > 0) {
         const subId = smLink[0].submission_id;
-        const [{ data: sub }, { data: subMats }, { data: subPeople }] = await Promise.all([
+        const [{ data: sub }, { data: subItems }] = await Promise.all([
           supabase.from("submissions").select("id, description, submission_date").eq("id", subId).single(),
-          supabase.from("submission_materials").select("material_id, material:client_materials(id, title, client:clients!client_id(full_name))").eq("submission_id", subId),
-          supabase.from("submission_people").select("person_id").eq("submission_id", subId),
+          supabase.from("submission_items")
+            .select("id, response, person:people!person_id(id, full_name), material:client_materials!material_id(id, title, client:clients!client_id(full_name))")
+            .eq("submission_id", subId),
         ]);
 
         if (sub) {
-          const personIds = (subPeople || []).map((r) => r.person_id);
-          const matIds = (subMats || []).map((r) => r.material_id).filter(Boolean);
-
-          // Fetch responses for these material×person combos
-          let respMap: Record<string, Record<string, string>> = {};
-          if (matIds.length > 0 && personIds.length > 0) {
-            const { data: respData } = await supabase
-              .from("material_responses")
-              .select("material_id, person_id, response")
-              .in("material_id", matIds)
-              .in("person_id", personIds);
-            for (const r of respData || []) {
-              if (!respMap[r.material_id]) respMap[r.material_id] = {};
-              if (r.response) respMap[r.material_id][r.person_id] = r.response;
-            }
-          }
-
           const materials: { title: string; client_name: string | null; person_name: string | null; response: string | null }[] = [];
-          for (const sm of subMats || []) {
-            const mat = (sm as unknown as { material: { id: string; title: string; client: { full_name: string } | null } | null }).material;
-            if (!mat) continue;
-            for (const pid of personIds) {
-              const personName = (peopleData || []).find((p) => p.id === pid)?.full_name || null;
+          for (const item of subItems || []) {
+            const mat = (item as Record<string, unknown>).material as { id: string; title: string; client: { full_name: string } | null } | null;
+            const person = (item as Record<string, unknown>).person as { id: string; full_name: string } | null;
+            if (mat) {
               materials.push({
                 title: mat.title,
                 client_name: mat.client?.full_name || null,
-                person_name: personName,
-                response: respMap[mat.id]?.[pid] || null,
+                person_name: person?.full_name || null,
+                response: item.response || null,
               });
             }
           }

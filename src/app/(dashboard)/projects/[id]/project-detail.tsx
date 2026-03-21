@@ -91,7 +91,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
         supabase.from("project_companies").select("id, company_id, designation").eq("project_id", projectId),
         supabase.from("project_people").select("person_id").eq("project_id", projectId),
         supabase.from("client_credits").select("client:clients!client_id(id, full_name), level, status, start_year, end_year").eq("project_id", projectId),
-        supabase.from("submission_projects").select("submission_id, submission:submissions(id, description, status)").eq("project_id", projectId),
+        supabase.from("submission_item_projects").select("submission_item_id, submission_item:submission_items!submission_item_id(id, submission_id, response, client:clients!client_id(full_name), material:client_materials!material_id(title), person:people!person_id(id, full_name), submission:submissions!submission_id(submission_date))").eq("project_id", projectId),
         supabase.from("meeting_projects").select("meeting_id, meeting:meetings(id, title, meeting_status, meeting_at)").eq("project_id", projectId),
       ]);
 
@@ -171,47 +171,39 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
           .filter(Boolean) as { id: string; full_name: string; level: string | null; status: string | null; start_year: number | null; end_year: number | null }[]
       );
 
-      // Enrich submissions with client, material, person info
-      const submissionRows = (subs || []).map((s: Record<string, unknown>) => ({
-        submission_id: s.submission_id as string,
-        submission: s.submission as { id: string; description: string; status: string } | null,
-      })).filter((s) => s.submission);
-
-      const subIds = submissionRows.map((s) => s.submission_id);
+      // Build submissions from submission_item_projects results
       let enrichedSubs: typeof relatedSubmissions = [];
-      if (subIds.length > 0) {
-        const [{ data: subClients }, { data: subMats }, { data: subPeople }] = await Promise.all([
-          supabase.from("submission_clients").select("submission_id, client:clients!client_id(full_name)").in("submission_id", subIds),
-          supabase.from("submission_materials").select("submission_id, material:client_materials(title)").in("submission_id", subIds),
-          supabase.from("submission_people").select("submission_id, person:people!person_id(id, full_name)").in("submission_id", subIds),
-        ]);
-        const clientMap: Record<string, string> = {};
-        const matMap: Record<string, string> = {};
-        const personMap: Record<string, { id: string; name: string }> = {};
-        for (const row of subClients || []) {
-          const r = row as unknown as { submission_id: string; client: { full_name: string } | null };
-          if (r.client) clientMap[r.submission_id] = r.client.full_name;
-        }
-        for (const row of subMats || []) {
-          const r = row as unknown as { submission_id: string; material: { title: string } | null };
-          if (r.material) matMap[r.submission_id] = r.material.title;
-        }
-        for (const row of subPeople || []) {
-          const r = row as unknown as { submission_id: string; person: { id: string; full_name: string } | null };
-          if (r.person) personMap[r.submission_id] = { id: r.person.id, name: r.person.full_name };
-        }
+      const itemProjectRows = (subs || []).map((s: Record<string, unknown>) => {
+        const item = s.submission_item as {
+          id: string;
+          submission_id: string;
+          response: string | null;
+          client: { full_name: string } | null;
+          material: { title: string } | null;
+          person: { id: string; full_name: string } | null;
+          submission: { submission_date: string | null } | null;
+        } | null;
+        return item;
+      }).filter(Boolean) as {
+        id: string;
+        submission_id: string;
+        response: string | null;
+        client: { full_name: string } | null;
+        material: { title: string } | null;
+        person: { id: string; full_name: string } | null;
+        submission: { submission_date: string | null } | null;
+      }[];
 
-        enrichedSubs = submissionRows.map((s) => ({
-          id: s.submission!.id,
-          description: s.submission!.description,
-          status: s.submission!.status,
-          client_name: clientMap[s.submission_id] || null,
-          material_title: matMap[s.submission_id] || null,
-          person_name: personMap[s.submission_id]?.name || null,
-          person_id: personMap[s.submission_id]?.id || null,
-          response: null,
-        }));
-      }
+      enrichedSubs = itemProjectRows.map((item) => ({
+        id: item.id,
+        description: "",
+        status: "",
+        client_name: item.client?.full_name || null,
+        material_title: item.material?.title || null,
+        person_name: item.person?.full_name || null,
+        person_id: item.person?.id || null,
+        response: item.response || null,
+      }));
       setRelatedSubmissions(enrichedSubs);
 
       // Enrich meetings with clients and people
@@ -592,7 +584,19 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
                         ) : "\u2014"}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
-                        <StatusBadge status={s.status} />
+                        {s.response ? (
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                            s.response === "love" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                            s.response === "like" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                            s.response === "meh" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                            s.response === "hate" ? "bg-red-50 text-red-700 border-red-200" :
+                            "bg-zinc-50 text-zinc-600 border-zinc-200"
+                          }`}>
+                            {s.response.charAt(0).toUpperCase() + s.response.slice(1)}
+                          </span>
+                        ) : (
+                          <span className="text-zinc-400">{"\u2014"}</span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         <Link href={`/submissions/${s.id}`} className="text-zinc-400 hover:text-black transition-colors">

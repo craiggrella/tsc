@@ -183,8 +183,8 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
           .order("due_date", { ascending: false })
           .range(0, 20),
         supabase
-          .from("submission_people")
-          .select("submission:submissions(id, description, status)")
+          .from("submission_items")
+          .select("id, submission_id, submission:submissions!submission_id(id, description, status)")
           .eq("person_id", contactId),
       ]);
 
@@ -236,41 +236,25 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
           .filter(Boolean)
       );
 
-      // Fetch materials
-      const subIds = (submissions || [])
-        .map((s: Record<string, unknown>) => (s.submission as { id: string } | null)?.id)
-        .filter(Boolean) as string[];
-      if (subIds.length > 0) {
-        const { data: subMats } = await supabase
-          .from("submission_materials")
-          .select("material:client_materials(id, title, material_type, direction)")
-          .in("submission_id", subIds);
+      // Fetch materials from submission_items for this person
+      const itemsWithMaterials = (submissions || []).filter((s: Record<string, unknown>) => s.submission);
+      if (itemsWithMaterials.length > 0) {
+        // submission_items already fetched above; now get materials for this person's items
+        const { data: personItems } = await supabase
+          .from("submission_items")
+          .select("id, response, material:client_materials!material_id(id, title, material_type, direction)")
+          .eq("person_id", contactId)
+          .not("material_id", "is", null);
         const seen = new Set<string>();
-        const uniqueMats: { id: string; title: string; material_type: string | null; direction: string | null }[] = [];
-        for (const row of subMats || []) {
-          const mat = (row as Record<string, unknown>).material as { id: string; title: string; material_type: string | null; direction: string | null } | null;
+        const uniqueMats: { id: string; title: string; material_type: string | null; direction: string | null; response: string | null }[] = [];
+        for (const item of personItems || []) {
+          const mat = (item as Record<string, unknown>).material as { id: string; title: string; material_type: string | null; direction: string | null } | null;
           if (mat && !seen.has(mat.id)) {
             seen.add(mat.id);
-            uniqueMats.push(mat);
+            uniqueMats.push({ ...mat, response: item.response || null });
           }
         }
-        const matIds = uniqueMats.map((m) => m.id);
-        if (matIds.length > 0) {
-          const { data: responses } = await supabase
-            .from("material_responses")
-            .select("material_id, response")
-            .eq("person_id", contactId)
-            .in("material_id", matIds);
-          const respMap: Record<string, string> = {};
-          for (const r of responses || []) {
-            respMap[r.material_id] = r.response;
-          }
-          setRelatedMaterials(
-            uniqueMats.map((m) => ({ ...m, response: respMap[m.id] || null }))
-          );
-        } else {
-          setRelatedMaterials([]);
-        }
+        setRelatedMaterials(uniqueMats);
       } else {
         setRelatedMaterials([]);
       }
@@ -324,14 +308,10 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
         }
       }
 
-      // Also check submissions
-      const { data: personSubs } = await supabase.from("submission_people").select("submission_id").eq("person_id", contactId);
-      const subIds = (personSubs || []).map((s) => s.submission_id);
-      if (subIds.length > 0) {
-        const { data: subClients } = await supabase.from("submission_clients").select("client_id").in("submission_id", subIds);
-        for (const sc of subClients || []) {
-          if (!metClientMap[sc.client_id]) metClientMap[sc.client_id] = { count: 0, lastDate: null };
-        }
+      // Also check submissions via submission_items
+      const { data: personSubItems } = await supabase.from("submission_items").select("client_id").eq("person_id", contactId).not("client_id", "is", null);
+      for (const si of personSubItems || []) {
+        if (si.client_id && !metClientMap[si.client_id]) metClientMap[si.client_id] = { count: 0, lastDate: null };
       }
 
       const clientMap = new Map((allClients || []).map((c) => [c.id, c.full_name]));
@@ -348,31 +328,20 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
       setGridMetWith(met);
       setGridNotMet(notMet);
 
-      // Materials read by this person
-      if (subIds.length > 0) {
-        const { data: subMats } = await supabase
-          .from("submission_materials")
-          .select("material:client_materials(id, title, client:clients!client_id(full_name))")
-          .in("submission_id", subIds);
+      // Materials read by this person via submission_items
+      const { data: matItems } = await supabase
+        .from("submission_items")
+        .select("response, material:client_materials!material_id(id, title, client:clients!client_id(full_name))")
+        .eq("person_id", contactId)
+        .not("material_id", "is", null);
+      if (matItems && matItems.length > 0) {
         const matIds = new Set<string>();
         const mats: typeof gridMaterials = [];
-        for (const row of subMats || []) {
-          const r = row as unknown as { material: { id: string; title: string; client: { full_name: string } | null } | null };
-          if (r.material && !matIds.has(r.material.id)) {
-            matIds.add(r.material.id);
-            mats.push({ id: r.material.id, title: r.material.title, client_name: r.material.client?.full_name || null, response: null });
-          }
-        }
-        // Get responses
-        if (mats.length > 0) {
-          const { data: responses } = await supabase
-            .from("material_responses")
-            .select("material_id, response")
-            .eq("person_id", contactId)
-            .in("material_id", mats.map((m) => m.id));
-          const respMap = new Map((responses || []).map((r) => [r.material_id, r.response]));
-          for (const m of mats) {
-            m.response = respMap.get(m.id) || null;
+        for (const item of matItems) {
+          const mat = (item as Record<string, unknown>).material as { id: string; title: string; client: { full_name: string } | null } | null;
+          if (mat && !matIds.has(mat.id)) {
+            matIds.add(mat.id);
+            mats.push({ id: mat.id, title: mat.title, client_name: mat.client?.full_name || null, response: item.response || null });
           }
         }
         setGridMaterials(mats);

@@ -1,60 +1,43 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, ExternalLink, Plus } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { StatusBadge } from "@/components/shared/status-badge";
 import {
   RelationPicker,
   MultiRelationPicker,
   type RelationOption,
 } from "@/components/shared/relation-picker";
 import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
-import type { SubmissionStatus } from "@/types/database";
 
-const STATUSES: { value: SubmissionStatus; label: string }[] = [
+const STATUS_OPTIONS = [
   { value: "need_to_send", label: "Need to Send" },
   { value: "sent", label: "Sent" },
   { value: "connected", label: "Connected" },
 ];
 
-const DEFAULT_REASONS = [
-  "General",
-  "Meeting",
-  "Staffing",
-  "At Their Request",
-  "Spec Script",
-  "Development",
+const RESPONSE_OPTIONS = [
+  { value: "", label: "" },
+  { value: "love", label: "Love" },
+  { value: "like", label: "Like" },
+  { value: "meh", label: "Meh" },
+  { value: "hate", label: "Hate" },
 ];
 
-function genKey() {
-  return Math.random().toString(36).slice(2) + Date.now().toString(36);
-}
-
-function todayDate() {
-  return new Date().toISOString().split("T")[0];
-}
-
-interface MaterialRow {
-  key: string;
+interface SubmissionItem {
+  id: string | null;
   clientId: string;
   materialId: string;
   personId: string;
   response: string;
-  projectId: string;
+  notes: string;
+  projectIds: string[];
+  // display helpers
+  personLabel?: string;
 }
-
-const emptyForm = {
-  description: "",
-  status: "need_to_send" as SubmissionStatus,
-  reason: [] as string[],
-  submission_date: null as string | null,
-  set_meeting: false,
-  notes: null as string | null,
-  person_ids: [] as string[],
-  project_ids: [] as string[],
-};
 
 interface SubmissionDetailProps {
   submissionId: string;
@@ -64,365 +47,304 @@ interface SubmissionDetailProps {
 export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps) {
   const supabase = createClient();
   const router = useRouter();
+
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const [people, setPeople] = useState<{ id: string; full_name: string }[]>([]);
-  const [projectList, setProjectList] = useState<{ id: string; name: string }[]>([]);
-  const [reasonList, setReasonList] = useState(DEFAULT_REASONS);
+  // Submission fields
+  const [status, setStatus] = useState("need_to_send");
+  const [submissionDate, setSubmissionDate] = useState("");
+  const [reason, setReason] = useState<string[]>([]);
+  const [notes, setNotes] = useState("");
 
-  // Materials table state
-  const [materialRows, setMaterialRows] = useState<MaterialRow[]>([]);
-  const [allClients, setAllClients] = useState<{ id: string; full_name: string }[]>([]);
-  const [allMaterialsByClient, setAllMaterialsByClient] = useState<Record<string, { id: string; title: string }[]>>({});
-  const [allMaterialsFlat, setAllMaterialsFlat] = useState<{ id: string; title: string }[]>([]);
+  // Items
+  const [items, setItems] = useState<SubmissionItem[]>([]);
+  const [origItemIds, setOrigItemIds] = useState<Set<string>>(new Set());
 
+  // Reference data
+  const [clients, setClients] = useState<{ id: string; full_name: string }[]>([]);
+  const [materialsByClient, setMaterialsByClient] = useState<Map<string, { id: string; title: string }[]>>(new Map());
+  const [projects, setProjects] = useState<RelationOption[]>([]);
+  const [reasonOptions, setReasonOptions] = useState<RelationOption[]>([]);
 
   useEffect(() => {
     async function load() {
       const [
-        { data: sub },
+        { data: submission },
         { data: clientsData },
-        { data: peopleData },
+        { data: allMaterials },
         { data: projectsData },
-        { data: sp },
-        { data: spr },
-        { data: smData },
-        { data: allMatsData },
+        { data: subItems },
       ] = await Promise.all([
         supabase.from("submissions").select("*").eq("id", submissionId).single(),
         supabase.from("clients").select("id, full_name").order("full_name"),
-        supabase.from("people").select("id, full_name").order("full_name"),
+        supabase.from("client_materials").select("id, title, client_id"),
         supabase.from("projects").select("id, name").order("name"),
-        supabase.from("submission_people").select("person_id").eq("submission_id", submissionId),
-        supabase.from("submission_projects").select("project_id").eq("submission_id", submissionId),
-        supabase.from("submission_materials").select("material:client_materials(id, title, client_id, client:clients!client_id(full_name))").eq("submission_id", submissionId),
-        supabase.from("client_materials").select("id, title, client_id").order("title"),
+        supabase
+          .from("submission_items")
+          .select(
+            "*, client:clients!client_id(full_name), material:client_materials!material_id(id, title), person:people!person_id(id, full_name)"
+          )
+          .eq("submission_id", submissionId),
       ]);
 
-      if (!sub) {
+      if (!submission) {
         router.replace("/submissions");
         return;
       }
 
-      setAllClients(clientsData || []);
-      setPeople(peopleData || []);
-      setProjectList(projectsData || []);
+      setStatus(submission.status || "need_to_send");
+      setSubmissionDate(submission.submission_date || "");
+      setReason(Array.isArray(submission.reason) ? submission.reason : []);
+      setNotes(submission.notes || "");
+      setClients(clientsData || []);
 
-      // Build allMaterialsByClient and allMaterialsFlat
-      const byClient: Record<string, { id: string; title: string }[]> = {};
-      const flat: { id: string; title: string }[] = [];
-      for (const m of allMatsData || []) {
-        const item = { id: m.id as string, title: m.title as string };
-        flat.push(item);
-        const cid = m.client_id as string;
-        if (cid) {
-          if (!byClient[cid]) byClient[cid] = [];
-          byClient[cid].push(item);
-        }
+      // Group materials by client_id
+      const matMap = new Map<string, { id: string; title: string }[]>();
+      for (const m of allMaterials || []) {
+        if (!m.client_id) continue;
+        const arr = matMap.get(m.client_id) || [];
+        arr.push({ id: m.id, title: m.title });
+        matMap.set(m.client_id, arr);
       }
-      setAllMaterialsByClient(byClient);
-      setAllMaterialsFlat(flat);
+      setMaterialsByClient(matMap);
 
-      // Add any reasons from this record that aren't in our list
-      if (sub.reason) {
-        setReasonList((prev) => {
-          const set = new Set(prev);
-          (sub.reason as string[]).forEach((r: string) => { if (!set.has(r)) set.add(r); });
-          return [...set];
+      setProjects((projectsData || []).map((p) => ({ id: p.id, label: p.name })));
+
+      // Build reason options from current values
+      const reasonArr: string[] = Array.isArray(submission.reason) ? submission.reason : [];
+      setReasonOptions(reasonArr.map((r: string) => ({ id: r, label: r })));
+
+      // Load items with their projects
+      const loadedItems: SubmissionItem[] = [];
+      const ids = new Set<string>();
+      for (const si of subItems || []) {
+        const item = si as unknown as {
+          id: string;
+          client_id: string;
+          material_id: string;
+          person_id: string;
+          response: string | null;
+          notes: string | null;
+          person: { id: string; full_name: string } | null;
+        };
+        ids.add(item.id);
+
+        // Fetch projects for this item
+        const { data: itemProjects } = await supabase
+          .from("submission_item_projects")
+          .select("project_id")
+          .eq("submission_item_id", item.id);
+
+        loadedItems.push({
+          id: item.id,
+          clientId: item.client_id || "",
+          materialId: item.material_id || "",
+          personId: item.person_id || "",
+          response: item.response || "",
+          notes: item.notes || "",
+          projectIds: (itemProjects || []).map((p) => p.project_id),
+          personLabel: item.person?.full_name || undefined,
         });
       }
-
-      let personIds = (sp || []).map((r) => r.person_id);
-      const submissionDate = sub.submission_date || todayDate();
-      const savedProjectIds = (spr || []).map((r) => r.project_id);
-      const defaultProjectId = savedProjectIds.length > 0 ? savedProjectIds[0] : "";
-
-      // Build materialRows from existing submission_materials + responses
-      const mats = (smData || [])
-        .map((r: Record<string, unknown>) => {
-          const mat = r.material as { id: string; title: string; client_id: string; client: { full_name: string } | null } | null;
-          if (!mat) return null;
-          return { id: mat.id, title: mat.title, clientId: mat.client_id || "", clientName: mat.client?.full_name || "" };
-        })
-        .filter(Boolean) as { id: string; title: string; clientId: string; clientName: string }[];
-
-      const matIds = mats.map((m) => m.id);
-      let respData: { material_id: string; person_id: string; response: string }[] = [];
-      if (matIds.length > 0) {
-        const { data } = await supabase
-          .from("material_responses")
-          .select("material_id, person_id, response")
-          .in("material_id", matIds);
-        respData = data || [];
-      }
-
-      const rows: MaterialRow[] = [];
-      for (const mat of mats) {
-        const matResps = respData.filter((r) => r.material_id === mat.id);
-        if (matResps.length > 0) {
-          for (const resp of matResps) {
-            rows.push({
-              key: genKey(),
-              clientId: mat.clientId,
-              materialId: mat.id,
-              personId: resp.person_id,
-              response: resp.response || "",
-              projectId: defaultProjectId,
-            });
-          }
-        } else {
-          rows.push({
-            key: genKey(),
-            clientId: mat.clientId,
-            materialId: mat.id,
-            personId: "",
-            response: "",
-            projectId: defaultProjectId,
-          });
-        }
-      }
-      setMaterialRows(rows);
-
-      // Sync person_ids to include everyone from material responses
-      const allPersonIdsFromRows = rows.map((r) => r.personId).filter(Boolean);
-      for (const pid of allPersonIdsFromRows) {
-        if (!personIds.includes(pid)) {
-          personIds = [...personIds, pid];
-        }
-      }
-
-      setForm({
-        description: sub.description,
-        status: sub.status,
-        reason: sub.reason,
-        submission_date: sub.submission_date || todayDate(),
-        set_meeting: sub.set_meeting,
-        notes: sub.notes,
-        person_ids: personIds,
-        project_ids: (spr || []).map((r) => r.project_id),
-      });
-
+      setItems(loadedItems);
+      setOrigItemIds(ids);
       setLoading(false);
     }
     load();
   }, [submissionId]);
 
-  const personOptions: RelationOption[] = useMemo(
-    () => people.map((p) => ({ id: p.id, label: p.full_name })),
-    [people]
-  );
-  const reasonOptions: RelationOption[] = useMemo(
-    () => reasonList.map((r) => ({ id: r, label: r })),
-    [reasonList]
-  );
-  const projectOptions: RelationOption[] = useMemo(
-    () => projectList.map((p) => ({ id: p.id, label: p.name })),
-    [projectList]
+  const clientOptions = useMemo(
+    () => clients.map((c) => ({ id: c.id, label: c.full_name })),
+    [clients]
   );
 
-  const createProject = useCallback(async (name: string): Promise<RelationOption | null> => {
-    const { data, error } = await supabase
-      .from("projects")
-      .insert({ name, status: "development" })
-      .select("id, name")
-      .single();
-    if (error || !data) return null;
-    setProjectList((prev) => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
-    return { id: data.id, label: data.name };
-  }, [supabase]);
-
-  const createReason = useCallback(async (name: string): Promise<RelationOption | null> => {
-    setReasonList((prev) => [...prev, name]);
-    return { id: name, label: name };
+  const updateItem = useCallback((index: number, patch: Partial<SubmissionItem>) => {
+    setItems((prev) => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)));
   }, []);
 
-  const searchPeople = useCallback(async (query: string): Promise<RelationOption[]> => {
-    const { data } = await supabase
-      .from("people")
-      .select("id, full_name")
-      .ilike("full_name", `%${query}%`)
-      .order("full_name")
-      .limit(15);
-    return (data || []).map((p) => ({ id: p.id, label: p.full_name }));
-  }, [supabase]);
+  const removeItem = useCallback((index: number) => {
+    setItems((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
-  const addNewPerson = useCallback(async (name: string): Promise<RelationOption | null> => {
-    const parts = name.split(" ");
-    const first_name = parts[0] || name;
-    const last_name = parts.slice(1).join(" ") || null;
-    const { data, error } = await supabase
-      .from("people")
-      .insert({ full_name: name, first_name, last_name, department: [] })
-      .select("id, full_name")
-      .single();
-    if (error || !data) return null;
-    setPeople((prev) => [...prev, { id: data.id, full_name: data.full_name }].sort((a, b) => a.full_name.localeCompare(b.full_name)));
-    return { id: data.id, label: data.full_name };
-  }, [supabase]);
-
-  function updateRow(idx: number, patch: Partial<MaterialRow>) {
-    setMaterialRows((prev) => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
-  }
-
-  function removeRow(idx: number) {
-    const row = materialRows[idx];
-    // Delete response from DB if person was set (regardless of response value)
-    if (row.materialId && row.personId) {
-      supabase.from("material_responses").delete().eq("material_id", row.materialId).eq("person_id", row.personId);
-    }
-    setMaterialRows((prev) => prev.filter((_, i) => i !== idx));
-  }
-
-  function addMaterialRow() {
-    // Auto-fill person if only 1 person currently in material rows
-    const currentPeople = [...new Set(materialRows.map((r) => r.personId).filter(Boolean))];
-    const autoPersonId = currentPeople.length === 1 ? currentPeople[0] : "";
-    setMaterialRows((prev) => [
+  const addItem = useCallback(() => {
+    setItems((prev) => [
       ...prev,
-      {
-        key: genKey(),
-        clientId: "",
-        materialId: "",
-        personId: autoPersonId,
-        response: "",
-        projectId: "",
-      },
+      { id: null, clientId: "", materialId: "", personId: "", response: "", notes: "", projectIds: [] },
     ]);
-  }
+  }, []);
 
-  function addPersonRow(materialId: string) {
-    const existing = materialRows.find((r) => r.materialId === materialId);
-    setMaterialRows((prev) => [
-      ...prev,
-      {
-        key: genKey(),
-        clientId: existing?.clientId || "",
-        materialId,
-        personId: "",
-        response: "",
-        projectId: existing?.projectId || "",
-      },
-    ]);
-  }
+  const searchPeople = useCallback(
+    async (query: string): Promise<RelationOption[]> => {
+      const { data } = await supabase
+        .from("people")
+        .select("id, full_name")
+        .ilike("full_name", `%${query}%`)
+        .limit(20);
+      return (data || []).map((p) => ({ id: p.id, label: p.full_name }));
+    },
+    [supabase]
+  );
 
-  async function handlePersonSelect(idx: number, personId: string | null) {
-    if (!personId) { updateRow(idx, { personId: "" }); return; }
-    updateRow(idx, { personId });
-    // Immediately save this person assignment to material_responses so it persists on reload
-    const row = materialRows[idx];
-    if (row.materialId && personId) {
-      await supabase.from("material_responses").upsert(
-        { material_id: row.materialId, person_id: personId, response: row.response || null },
-        { onConflict: "material_id,person_id" }
-      );
-    }
-  }
+  const addPerson = useCallback(
+    async (name: string): Promise<RelationOption | null> => {
+      const parts = name.trim().split(/\s+/);
+      const first = parts[0] || "";
+      const last = parts.slice(1).join(" ") || "";
+      const { data, error } = await supabase
+        .from("people")
+        .insert({ first_name: first, last_name: last, full_name: name.trim() })
+        .select("id, full_name")
+        .single();
+      if (error || !data) return null;
+      return { id: data.id, label: data.full_name };
+    },
+    [supabase]
+  );
 
-  async function handleResponseChange(idx: number, value: string) {
-    const row = materialRows[idx];
-    updateRow(idx, { response: value });
-    if (row.materialId && row.personId) {
-      if (value) {
-        const { error } = await supabase.from("material_responses").upsert(
-          { material_id: row.materialId, person_id: row.personId, response: value },
+  const addProject = useCallback(
+    async (name: string): Promise<RelationOption | null> => {
+      const { data, error } = await supabase
+        .from("projects")
+        .insert({ name: name.trim() })
+        .select("id, name")
+        .single();
+      if (error || !data) return null;
+      const opt = { id: data.id, label: data.name };
+      setProjects((prev) => [...prev, opt]);
+      return opt;
+    },
+    [supabase]
+  );
+
+  const addReason = useCallback(
+    async (name: string): Promise<RelationOption | null> => {
+      const opt = { id: name.trim(), label: name.trim() };
+      setReasonOptions((prev) => [...prev, opt]);
+      return opt;
+    },
+    []
+  );
+
+  const handleResponseChange = useCallback(
+    async (index: number, newResponse: string) => {
+      updateItem(index, { response: newResponse });
+      const item = items[index];
+      if (!item) return;
+      const materialId = item.materialId;
+      const personId = item.personId;
+      if (newResponse && materialId && personId) {
+        await supabase.from("material_responses").upsert(
+          { material_id: materialId, person_id: personId, response: newResponse },
           { onConflict: "material_id,person_id" }
         );
-        if (error) console.error("Response upsert error:", error);
-      } else {
-        const { error } = await supabase.from("material_responses")
-          .update({ response: null })
-          .eq("material_id", row.materialId).eq("person_id", row.personId);
-        if (error) console.error("Response clear error:", error);
       }
-    }
-  }
+    },
+    [items, supabase, updateItem]
+  );
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      // Derive client_ids and person_ids from materialRows
-      const clientIds = [...new Set(materialRows.map((r) => r.clientId).filter(Boolean))];
-      const materialIds = [...new Set(materialRows.map((r) => r.materialId).filter(Boolean))];
-      const derivedPersonIds = [...new Set(materialRows.map((r) => r.personId).filter(Boolean))];
+      // Auto-generate description from items
+      const clientNames = [...new Set(items.map((i) => clients.find((c) => c.id === i.clientId)?.full_name).filter(Boolean))];
+      const personLabels = [...new Set(items.map((i) => i.personLabel).filter(Boolean))];
+      const description = [...clientNames, ...personLabels].join(", ") || null;
 
-      // Auto-generate description from client names + people names
-      const clientNames = clientIds.map((id) => allClients.find((c) => c.id === id)?.full_name).filter(Boolean);
-      const personNames = derivedPersonIds.map((id) => personOptions.find((p) => p.id === id)?.label || people.find((p) => p.id === id)?.full_name).filter(Boolean);
-      const autoDesc = [clientNames.join(", "), personNames.join(", ")].filter(Boolean).join(" — ") || "Submission";
+      await supabase
+        .from("submissions")
+        .update({
+          status,
+          submission_date: submissionDate || null,
+          reason: reason.length > 0 ? reason : null,
+          notes: notes || null,
+          description,
+          set_meeting: false,
+          response: null,
+        })
+        .eq("id", submissionId);
 
-      const payload = {
-        description: autoDesc,
-        status: form.status,
-        reason: form.reason,
-        submission_date: form.submission_date || null,
-        set_meeting: form.set_meeting,
-        notes: form.notes || null,
-      };
+      // Track current item IDs to find deletions
+      const currentItemIds = new Set(items.filter((i) => i.id).map((i) => i.id!));
+      const toDelete = [...origItemIds].filter((id) => !currentItemIds.has(id));
 
-      const { error: updateError } = await supabase.from("submissions").update(payload).eq("id", submissionId);
-      if (updateError) { console.error("Save error:", updateError); return; }
+      // Delete removed items
+      for (const id of toDelete) {
+        await supabase.from("submission_item_projects").delete().eq("submission_item_id", id);
+        await supabase.from("submission_items").delete().eq("id", id);
+      }
 
-      // Sync join tables — delete all then re-insert
-      const [delC, delP, delPr, delM] = await Promise.all([
-        supabase.from("submission_clients").delete().eq("submission_id", submissionId),
-        supabase.from("submission_people").delete().eq("submission_id", submissionId),
-        supabase.from("submission_projects").delete().eq("submission_id", submissionId),
-        supabase.from("submission_materials").delete().eq("submission_id", submissionId),
-      ]);
-      if (delC.error) console.error("Delete clients error:", delC.error);
-      if (delP.error) console.error("Delete people error:", delP.error);
-      if (delPr.error) console.error("Delete projects error:", delPr.error);
-      if (delM.error) console.error("Delete materials error:", delM.error);
+      // Upsert items
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const payload = {
+          submission_id: submissionId,
+          client_id: item.clientId || null,
+          material_id: item.materialId || null,
+          person_id: item.personId || null,
+          response: item.response || null,
+          notes: item.notes || null,
+        };
 
-      if (clientIds.length > 0)
-        await supabase.from("submission_clients").insert(clientIds.map((id) => ({ submission_id: submissionId, client_id: id })));
-      if (derivedPersonIds.length > 0)
-        await supabase.from("submission_people").insert(derivedPersonIds.map((id) => ({ submission_id: submissionId, person_id: id })));
-      const derivedProjectIds = [...new Set(materialRows.map((r) => r.projectId).filter(Boolean))];
-      if (derivedProjectIds.length > 0)
-        await supabase.from("submission_projects").insert(derivedProjectIds.map((id) => ({ submission_id: submissionId, project_id: id })));
-      if (materialIds.length > 0)
-        await supabase.from("submission_materials").insert(materialIds.map((id) => ({ submission_id: submissionId, material_id: id })));
+        let itemId = item.id;
+        if (itemId) {
+          await supabase.from("submission_items").update(payload).eq("id", itemId);
+        } else {
+          const { data } = await supabase.from("submission_items").insert(payload).select("id").single();
+          if (data) {
+            itemId = data.id;
+            updateItem(i, { id: itemId });
+          }
+        }
 
-      // Clean up material_responses: delete responses for materials no longer on this submission
-      // Get all material IDs that were previously on this submission (from DB) vs what's currently in materialRows
-      // The safest approach: for each material×person combo in materialRows, those stay. Everything else for these materials gets cleaned.
-      // Actually, material_responses are global (not per-submission), so we only delete responses
-      // for material×person combos that were explicitly removed by the user via removeRow
-      // The removeRow function already handles deleting individual responses.
-      // But if an entire material is removed (all its rows deleted), we should also clean up.
+        if (itemId) {
+          // Sync projects
+          await supabase.from("submission_item_projects").delete().eq("submission_item_id", itemId);
+          if (item.projectIds.length > 0) {
+            await supabase.from("submission_item_projects").insert(
+              item.projectIds.map((pid) => ({ submission_item_id: itemId, project_id: pid }))
+            );
+          }
+
+          // Upsert material_responses
+          if (item.response && item.materialId && item.personId) {
+            await supabase.from("material_responses").upsert(
+              { material_id: item.materialId, person_id: item.personId, response: item.response },
+              { onConflict: "material_id,person_id" }
+            );
+          }
+        }
+      }
+
+      // Update origItemIds
+      setOrigItemIds(new Set(items.map((i) => i.id).filter(Boolean) as string[]));
 
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } finally {
       setSaving(false);
     }
-  }, [form, submissionId, supabase, materialRows, allClients, personOptions, people]);
+  }, [status, submissionDate, reason, notes, items, origItemIds, submissionId, clients, supabase, updateItem]);
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Delete this submission?")) return;
     setDeleting(true);
     try {
+      // Delete item projects and items first
+      for (const item of items) {
+        if (item.id) {
+          await supabase.from("submission_item_projects").delete().eq("submission_item_id", item.id);
+        }
+      }
+      await supabase.from("submission_items").delete().eq("submission_id", submissionId);
       await supabase.from("submissions").delete().eq("id", submissionId);
       router.push("/submissions");
     } finally {
       setDeleting(false);
     }
-  }, [submissionId, supabase, router]);
-
-  // Check if a row is the last row for its materialId (to show "+ Add Person")
-  function isLastRowForMaterial(idx: number): boolean {
-    const row = materialRows[idx];
-    if (!row.materialId) return false;
-    for (let i = materialRows.length - 1; i >= 0; i--) {
-      if (materialRows[i].materialId === row.materialId) return i === idx;
-    }
-    return false;
-  }
+  }, [items, submissionId, supabase, router]);
 
   if (loading) {
     return (
@@ -433,21 +355,16 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
-      {/* Back link */}
-      <Link
-        href="/submissions"
-        className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-black transition-colors mb-4"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Submissions
-      </Link>
-
-      {/* Header */}
+    <div className="mx-auto max-w-5xl">
+      {/* Back + Save */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold tracking-tight text-black">
-          {form.description || "Untitled Submission"}
-        </h1>
+        <Link
+          href="/submissions"
+          className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-black transition-colors"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Submissions
+        </Link>
         <button
           onClick={handleSave}
           disabled={saving}
@@ -457,170 +374,173 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         </button>
       </div>
 
-      {/* Form */}
-      <div className="space-y-5">
-        {/* 1. Status + Date + Reason — compact row */}
-        <div className="grid grid-cols-3 gap-3">
-          <Field label="Status">
-            <Select
-              value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value as SubmissionStatus })}
-              options={STATUSES}
-            />
-          </Field>
-          <Field label="Date">
-            <Input
-              type="date"
-              value={form.submission_date || ""}
-              onChange={(e) => setForm({ ...form, submission_date: e.target.value || null })}
-            />
-          </Field>
-          <Field label="Reason">
-            <MultiRelationPicker
-              value={form.reason}
-              onChange={(ids) => setForm({ ...form, reason: ids })}
-              options={reasonOptions}
-              placeholder="Select reasons..."
-              onAdd={createReason}
-              addLabel="Add reason"
-            />
-          </Field>
+      {/* Top section */}
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        <Field label="Status">
+          <Select
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            options={STATUS_OPTIONS}
+          />
+        </Field>
+        <Field label="Date">
+          <Input
+            type="date"
+            value={submissionDate}
+            onChange={(e) => setSubmissionDate(e.target.value)}
+          />
+        </Field>
+        <Field label="Reason">
+          <MultiRelationPicker
+            value={reason}
+            onChange={setReason}
+            options={reasonOptions}
+            placeholder="Select reasons..."
+            onAdd={addReason}
+            addLabel="Create"
+          />
+        </Field>
+      </div>
+
+      {/* Notes */}
+      <Field label="Notes" className="mb-6">
+        <Textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Submission notes..."
+        />
+      </Field>
+
+      {/* Materials Submitted */}
+      <div className="mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-black">
+            Materials Submitted{" "}
+            <span className="font-normal text-zinc-400">({items.length})</span>
+          </h2>
+          <button
+            onClick={addItem}
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50 transition-colors"
+          >
+            <Plus className="h-3 w-3" />
+            Add Material
+          </button>
         </div>
 
-        {/* 3. Materials Submitted — THE MAIN TABLE */}
-        <Field label="Materials Submitted">
-          <div className="space-y-3">
-            <div className="overflow-x-auto rounded-md border border-zinc-200">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
-                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Client</th>
-                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Material</th>
-                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Project</th>
-                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Person</th>
-                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Response</th>
-                    <th className="px-3 py-2 w-20"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {materialRows.map((row, idx) => (
-                    <tr key={row.key} className="border-b border-zinc-100 last:border-0">
-                      <td className="px-3 py-2">
+        {items.length === 0 ? (
+          <p className="text-sm text-zinc-400 py-8 text-center">
+            No materials added yet. Click &ldquo;Add Material&rdquo; to start.
+          </p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-zinc-200">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-200 bg-zinc-50/50">
+                  <th className="px-2 py-2 text-left text-xs font-medium text-zinc-500">Client</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-zinc-500">Material</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-zinc-500">Project(s)</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-zinc-500">Person</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-zinc-500">Response</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-zinc-500">Notes</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-zinc-500 w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((item, idx) => {
+                  const clientMaterials = materialsByClient.get(item.clientId) || [];
+                  return (
+                    <tr key={idx} className="border-b border-zinc-100 last:border-0 align-top">
+                      <td className="px-2 py-2 min-w-[140px]">
                         <select
-                          value={row.clientId}
-                          onChange={(e) => updateRow(idx, { clientId: e.target.value, materialId: "" })}
-                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none w-full"
+                          value={item.clientId}
+                          onChange={(e) => updateItem(idx, { clientId: e.target.value, materialId: "" })}
+                          className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs outline-none hover:border-zinc-300 transition-colors"
                         >
                           <option value="">Select client...</option>
-                          {allClients.map((c) => (
-                            <option key={c.id} value={c.id}>{c.full_name}</option>
+                          {clients.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.full_name}
+                            </option>
                           ))}
                         </select>
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-2 min-w-[140px]">
                         <select
-                          value={row.materialId}
-                          onChange={(e) => updateRow(idx, { materialId: e.target.value })}
-                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none w-full"
+                          value={item.materialId}
+                          onChange={(e) => updateItem(idx, { materialId: e.target.value })}
+                          className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs outline-none hover:border-zinc-300 transition-colors"
                         >
                           <option value="">Select material...</option>
-                          {(allMaterialsByClient[row.clientId] || allMaterialsFlat).map((m) => (
-                            <option key={m.id} value={m.id}>{m.title}</option>
+                          {clientMaterials.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.title}
+                            </option>
                           ))}
                         </select>
                       </td>
-                      <td className="px-3 py-2">
-                        <select
-                          value={row.projectId}
-                          onChange={(e) => updateRow(idx, { projectId: e.target.value })}
-                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
-                        >
-                          <option value="">—</option>
-                          {projectOptions.map((p) => (
-                            <option key={p.id} value={p.id}>{p.label}</option>
-                          ))}
-                        </select>
+                      <td className="px-2 py-2 min-w-[160px]">
+                        <MultiRelationPicker
+                          value={item.projectIds}
+                          onChange={(ids) => updateItem(idx, { projectIds: ids })}
+                          options={projects}
+                          placeholder="Projects..."
+                          onAdd={addProject}
+                          addLabel="Create"
+                        />
                       </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1">
-                          <div className="flex-1 min-w-[140px]">
-                            <RelationPicker
-                              value={row.personId || null}
-                              onChange={(id) => handlePersonSelect(idx, id)}
-                              options={[...new Set(materialRows.map((r) => r.personId).filter(Boolean))].map((pid) => ({
-                                id: pid,
-                                label: personOptions.find((p) => p.id === pid)?.label || people.find((p) => p.id === pid)?.full_name || "",
-                              }))}
-                              onSearch={searchPeople}
-                              onAdd={addNewPerson}
-                              addLabel="Add contact"
-                              selectedLabel={row.personId ? (personOptions.find((p) => p.id === row.personId)?.label || people.find((p) => p.id === row.personId)?.full_name) : undefined}
-                              placeholder="Search people..."
-                            />
-                          </div>
-                          {row.personId && (
-                            <Link href={`/contacts/${row.personId}`} className="shrink-0 text-zinc-400 hover:text-black transition-colors" title="View contact">
-                              <ExternalLink className="h-3 w-3" />
-                            </Link>
-                          )}
-                        </div>
+                      <td className="px-2 py-2 min-w-[160px]">
+                        <RelationPicker
+                          value={item.personId || null}
+                          onChange={(id) =>
+                            updateItem(idx, {
+                              personId: id || "",
+                              personLabel: id ? undefined : "",
+                            })
+                          }
+                          options={[]}
+                          placeholder="Search person..."
+                          onSearch={searchPeople}
+                          onAdd={addPerson}
+                          addLabel="Create"
+                          selectedLabel={item.personLabel}
+                        />
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-2 py-2 min-w-[100px]">
                         <select
-                          value={row.response}
+                          value={item.response}
                           onChange={(e) => handleResponseChange(idx, e.target.value)}
-                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
+                          className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs outline-none hover:border-zinc-300 transition-colors"
                         >
-                          <option value="">&mdash;</option>
-                          <option value="love">Love</option>
-                          <option value="like">Like</option>
-                          <option value="meh">Meh</option>
-                          <option value="hate">Hate</option>
+                          {RESPONSE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
                         </select>
                       </td>
-                      <td className="px-3 py-2 text-xs">
-                        <div className="flex items-center gap-2">
-                          <button onClick={() => removeRow(idx)} className="text-zinc-400 hover:text-red-500 transition-colors">
-                            ✕
-                          </button>
-                          {row.materialId && isLastRowForMaterial(idx) && (
-                            <button
-                              onClick={() => addPersonRow(row.materialId)}
-                              className="inline-flex items-center gap-0.5 text-[11px] text-zinc-400 hover:text-black transition-colors whitespace-nowrap"
-                            >
-                              <Plus className="h-3 w-3" />
-                              Person
-                            </button>
-                          )}
-                        </div>
+                      <td className="px-2 py-2 min-w-[120px]">
+                        <input
+                          value={item.notes}
+                          onChange={(e) => updateItem(idx, { notes: e.target.value })}
+                          placeholder="Notes..."
+                          className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs outline-none placeholder:text-zinc-400 hover:border-zinc-300 transition-colors"
+                        />
+                      </td>
+                      <td className="px-2 py-2">
+                        <button
+                          onClick={() => removeItem(idx)}
+                          className="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
                       </td>
                     </tr>
-                  ))}
-                  {materialRows.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-3 py-4 text-center text-xs text-zinc-400">
-                        No materials added yet
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            <button
-              onClick={addMaterialRow}
-              className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-black transition-colors"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add Material
-            </button>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        </Field>
-
-        {/* 5. Notes */}
-        <Field label="Notes">
-          <Textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value || null })} placeholder="Notes..." />
-        </Field>
+        )}
       </div>
 
       {/* Danger Zone */}

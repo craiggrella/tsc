@@ -121,98 +121,47 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
       });
       setClients(clientsData || []);
 
-      // Load readers: people with material_responses for this material
-      const { data: responsesData } = await supabase
-        .from("material_responses")
-        .select("person_id, response, person:people!person_id(id, full_name, buyer_type, company:companies!company_id(id, name))")
+      // Load readers from submission_items where material_id = this material
+      const { data: items } = await supabase
+        .from("submission_items")
+        .select("id, submission_id, response, person:people!person_id(id, full_name, buyer_type, company:companies!company_id(id, name)), submission:submissions!submission_id(submission_date)")
         .eq("material_id", materialId);
 
-      // Get submissions that include this material + their projects and people
-      const { data: subMats } = await supabase
-        .from("submission_materials")
-        .select("submission_id")
-        .eq("material_id", materialId);
-      const subIds = (subMats || []).map((s) => s.submission_id);
-
-      // Build maps: person_id → { project_name, project_id, submission_id }
-      const personExtraMap = new Map<string, { project_name: string | null; project_id: string | null; submission_id: string | null }>();
-      if (subIds.length > 0) {
-        // Get projects per submission
-        const { data: subProjects } = await supabase
-          .from("submission_projects")
-          .select("submission_id, project_id, project:projects(name)")
-          .in("submission_id", subIds);
-        const subProjectMap = new Map<string, { name: string; id: string }>();
-        for (const row of subProjects || []) {
-          const r = row as unknown as { submission_id: string; project_id: string; project: { name: string } | null };
-          if (r.project) subProjectMap.set(r.submission_id, { name: r.project.name, id: r.project_id });
-        }
-
-        // Get people per submission
-        const { data: subPeople } = await supabase
-          .from("submission_people")
-          .select("submission_id, person_id")
-          .in("submission_id", subIds);
-        for (const sp of subPeople || []) {
-          if (!personExtraMap.has(sp.person_id)) {
-            const proj = subProjectMap.get(sp.submission_id);
-            personExtraMap.set(sp.person_id, {
-              project_name: proj?.name || null,
-              project_id: proj?.id || null,
-              submission_id: sp.submission_id,
-            });
-          }
+      // Get projects per submission_item
+      const itemIds = (items || []).map((i) => i.id);
+      let projectMap = new Map<string, { id: string; name: string }>();
+      if (itemIds.length > 0) {
+        const { data: itemProjects } = await supabase
+          .from("submission_item_projects")
+          .select("submission_item_id, project:projects!project_id(id, name)")
+          .in("submission_item_id", itemIds);
+        for (const ip of itemProjects || []) {
+          const r = ip as unknown as { submission_item_id: string; project: { id: string; name: string } | null };
+          if (r.project) projectMap.set(r.submission_item_id, r.project);
         }
       }
 
-      // Build reader map from material_responses
       const readerMap = new Map<string, ReaderRow>();
-      for (const row of responsesData || []) {
-        const person = (row as Record<string, unknown>).person as {
+      for (const item of items || []) {
+        const person = (item as Record<string, unknown>).person as {
           id: string;
           full_name: string;
           buyer_type: string | null;
-          company: { name: string; id?: string } | null;
+          company: { id: string; name: string } | null;
         } | null;
-        if (person) {
-          const extra = personExtraMap.get(person.id);
+        if (person && !readerMap.has(person.id)) {
+          const proj = projectMap.get(item.id);
           readerMap.set(person.id, {
             person_id: person.id,
             full_name: person.full_name,
-            company_id: (person.company as unknown as { id: string })?.id || null,
+            company_id: person.company?.id || null,
             company_name: person.company?.name || null,
             buyer_type: person.buyer_type,
-            response: row.response,
-            project_id: extra?.project_id || null,
-            project_name: extra?.project_name || null,
-            submission_id: extra?.submission_id || null,
+            response: item.response,
+            project_id: proj?.id || null,
+            project_name: proj?.name || null,
+            submission_id: item.submission_id,
           });
-        }
-      }
-
-      // Also load people from submissions who have no response yet
-      if (subIds.length > 0) {
-        const { data: subPeopleAll } = await supabase
-          .from("submission_people")
-          .select("submission_id, person:people!person_id(id, full_name, buyer_type, company:companies!company_id(id, name))")
-          .in("submission_id", subIds);
-
-        for (const row of subPeopleAll || []) {
-          const r = row as unknown as { submission_id: string; person: { id: string; full_name: string; buyer_type: string | null; company: { id: string; name: string } | null } | null };
-          if (r.person && !readerMap.has(r.person.id)) {
-            const extra = personExtraMap.get(r.person.id);
-            readerMap.set(r.person.id, {
-              person_id: r.person.id,
-              full_name: r.person.full_name,
-              company_id: r.person.company?.id || null,
-              company_name: r.person.company?.name || null,
-              buyer_type: r.person.buyer_type,
-              response: null,
-              project_id: extra?.project_id || null,
-              project_name: extra?.project_name || null,
-              submission_id: r.submission_id,
-            });
-          }
         }
       }
 

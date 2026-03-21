@@ -312,54 +312,37 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   useEffect(() => {
     if (activeTab !== "submissions" || submissionsLoaded) return;
     async function loadSubmissions() {
-      const { data: clientSubs } = await supabase
-        .from("submission_clients")
-        .select("submission_id")
+      // Query submission_items where client_id = this client
+      const { data: items } = await supabase
+        .from("submission_items")
+        .select("id, submission_id, response, person:people!person_id(id, full_name, company:companies!company_id(name)), material:client_materials!material_id(title), submission:submissions!submission_id(submission_date)")
         .eq("client_id", clientId);
-      const subIds = (clientSubs || []).map((s) => s.submission_id);
-      if (subIds.length === 0) { setSubmissionsLoaded(true); return; }
 
-      const [{ data: subs }, { data: sPeople }, { data: sProjects }] = await Promise.all([
-        supabase.from("submissions").select("id, response, submission_date").in("id", subIds),
-        supabase.from("submission_people").select("submission_id, person:people(id, full_name, company:companies!company_id(name))").in("submission_id", subIds),
-        supabase.from("submission_projects").select("submission_id, project:projects(id, name)").in("submission_id", subIds),
-      ]);
+      if (!items || items.length === 0) { setSubmissionsLoaded(true); return; }
 
-      const subMap = new Map((subs || []).map((s) => [s.id, s]));
+      // Get projects per submission_item from submission_item_projects
+      const itemIds = items.map((i) => i.id);
+      const { data: itemProjects } = await supabase
+        .from("submission_item_projects")
+        .select("submission_item_id, project:projects!project_id(name)")
+        .in("submission_item_id", itemIds);
       const projectMap = new Map<string, string>();
-      for (const sp of sProjects || []) {
-        const r = sp as unknown as { submission_id: string; project: { id: string; name: string } | null };
-        if (r.project) projectMap.set(r.submission_id, r.project.name);
+      for (const ip of itemProjects || []) {
+        const r = ip as unknown as { submission_item_id: string; project: { name: string } | null };
+        if (r.project) projectMap.set(r.submission_item_id, r.project.name);
       }
 
-      const rows: SubmissionTableRow[] = [];
-      for (const sp of sPeople || []) {
-        const r = sp as unknown as { submission_id: string; person: { id: string; full_name: string; company: { name: string } | null } | null };
-        const sub = subMap.get(r.submission_id);
-        if (!sub) continue;
-        rows.push({
-          submission_id: r.submission_id,
-          person_name: r.person?.full_name || "Unknown",
-          person_id: r.person?.id || null,
-          company_name: r.person?.company?.name || null,
-          project_name: projectMap.get(r.submission_id) || null,
-          response: sub.response,
-        });
-      }
-      // Submissions with no people
-      for (const s of subs || []) {
-        const hasPerson = rows.some((r) => r.submission_id === s.id);
-        if (!hasPerson) {
-          rows.push({
-            submission_id: s.id,
-            person_name: "\u2014",
-            person_id: null,
-            company_name: null,
-            project_name: projectMap.get(s.id) || null,
-            response: s.response,
-          });
-        }
-      }
+      const rows: SubmissionTableRow[] = items.map((item) => {
+        const person = (item as Record<string, unknown>).person as { id: string; full_name: string; company: { name: string } | null } | null;
+        return {
+          submission_id: item.submission_id,
+          person_name: person?.full_name || "\u2014",
+          person_id: person?.id || null,
+          company_name: person?.company?.name || null,
+          project_name: projectMap.get(item.id) || null,
+          response: item.response,
+        };
+      });
       setSubmissionRows(rows);
       setSubmissionsLoaded(true);
     }
@@ -462,48 +445,24 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   async function loadPersonDetail(personId: string) {
     setSelectedNotMet(personId);
     setSelectedPersonDetail(null);
-    const { data: personSubs } = await supabase
-      .from("submission_people")
-      .select("submission_id")
+    // Find submission_items where this person AND this client overlap
+    const { data: items } = await supabase
+      .from("submission_items")
+      .select("id, response, material:client_materials!material_id(id, title), submission:submissions!submission_id(submission_date)")
+      .eq("client_id", clientId)
       .eq("person_id", personId);
-    const { data: clientSubs } = await supabase
-      .from("submission_clients")
-      .select("submission_id")
-      .eq("client_id", clientId);
 
-    const personSubIds = new Set((personSubs || []).map((s) => s.submission_id));
-    const sharedSubIds = (clientSubs || []).filter((s) => personSubIds.has(s.submission_id)).map((s) => s.submission_id);
-
-    if (sharedSubIds.length > 0) {
-      const { data: subMats } = await supabase
-        .from("submission_materials")
-        .select("material:client_materials(id, title), submission:submissions(submission_date)")
-        .in("submission_id", sharedSubIds);
-
+    if (items && items.length > 0) {
       const matIds = new Set<string>();
       const materials: { title: string; date: string | null; response: string | null }[] = [];
-      for (const row of subMats || []) {
-        const r = row as unknown as { material: { id: string; title: string } | null; submission: { submission_date: string | null } | null };
-        if (r.material && !matIds.has(r.material.id)) {
-          matIds.add(r.material.id);
-          materials.push({ title: r.material.title, date: r.submission?.submission_date || null, response: null });
+      for (const item of items) {
+        const mat = (item as Record<string, unknown>).material as { id: string; title: string } | null;
+        const sub = (item as Record<string, unknown>).submission as { submission_date: string | null } | null;
+        if (mat && !matIds.has(mat.id)) {
+          matIds.add(mat.id);
+          materials.push({ title: mat.title, date: sub?.submission_date || null, response: item.response || null });
         }
       }
-
-      if (materials.length > 0) {
-        const matIdArr = Array.from(matIds);
-        const { data: responses } = await supabase
-          .from("material_responses")
-          .select("material_id, response")
-          .eq("person_id", personId)
-          .in("material_id", matIdArr);
-        const respMap = new Map((responses || []).map((r) => [r.material_id, r.response]));
-        const matIdList = Array.from(matIds);
-        for (let i = 0; i < matIdList.length; i++) {
-          materials[i].response = respMap.get(matIdList[i]) || null;
-        }
-      }
-
       setSelectedPersonDetail({ materials });
     } else {
       setSelectedPersonDetail({ materials: [] });
