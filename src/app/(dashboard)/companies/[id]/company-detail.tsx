@@ -155,19 +155,19 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
         const [{ data: personPhones }, { data: personEmails }] = await Promise.all([
           supabase
             .from("contact_phones")
-            .select("entity_id, number")
+            .select("entity_id, number, is_primary")
             .eq("entity_type", "person")
             .in("entity_id", personIds)
-            .eq("is_primary", true),
+            .order("is_primary", { ascending: false }),
           supabase
             .from("contact_emails")
-            .select("entity_id, address")
+            .select("entity_id, address, is_primary")
             .eq("entity_type", "person")
             .in("entity_id", personIds)
-            .eq("is_primary", true),
+            .order("is_primary", { ascending: false }),
         ]);
-        for (const p of personPhones || []) phoneMap[p.entity_id] = p.number;
-        for (const e of personEmails || []) emailMap[e.entity_id] = e.address;
+        for (const p of personPhones || []) { if (!phoneMap[p.entity_id]) phoneMap[p.entity_id] = p.number; }
+        for (const e of personEmails || []) { if (!emailMap[e.entity_id]) emailMap[e.entity_id] = e.address; }
       }
 
       setPeople(

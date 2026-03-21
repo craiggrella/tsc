@@ -112,14 +112,14 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
         .select("number")
         .eq("entity_type", "person")
         .eq("entity_id", assistantId)
-        .eq("is_primary", true)
+        .order("is_primary", { ascending: false })
         .limit(1),
       supabase
         .from("contact_emails")
         .select("address")
         .eq("entity_type", "person")
         .eq("entity_id", assistantId)
-        .eq("is_primary", true)
+        .order("is_primary", { ascending: false })
         .limit(1),
     ]);
     setAssistantInfo({
