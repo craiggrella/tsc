@@ -148,6 +148,8 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
 
       let personIds = (sp || []).map((r) => r.person_id);
       const submissionDate = sub.submission_date || todayDate();
+      const savedProjectIds = (spr || []).map((r) => r.project_id);
+      const defaultProjectId = savedProjectIds.length > 0 ? savedProjectIds[0] : "";
 
       // Build materialRows from existing submission_materials + responses
       const mats = (smData || [])
@@ -179,7 +181,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
               materialId: mat.id,
               personId: resp.person_id,
               response: resp.response || "",
-              projectId: "",
+              projectId: defaultProjectId,
             });
           }
         } else {
@@ -189,7 +191,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
             materialId: mat.id,
             personId: "",
             response: "",
-            projectId: "",
+            projectId: defaultProjectId,
           });
         }
       }

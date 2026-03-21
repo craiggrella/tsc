@@ -254,28 +254,14 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
         const subId = data.id;
 
         // 2. Insert join tables
-        await Promise.all([
-          clientIds.length > 0
-            ? supabase.from("submission_clients").insert(
-                clientIds.map((id) => ({ submission_id: subId, client_id: id }))
-              )
-            : Promise.resolve(),
-          derivedPersonIds.length > 0
-            ? supabase.from("submission_people").insert(
-                derivedPersonIds.map((id) => ({ submission_id: subId, person_id: id }))
-              )
-            : Promise.resolve(),
-          derivedProjectIds.length > 0
-            ? supabase.from("submission_projects").insert(
-                derivedProjectIds.map((id) => ({ submission_id: subId, project_id: id }))
-              )
-            : Promise.resolve(),
-          materialIds.length > 0
-            ? supabase.from("submission_materials").insert(
-                materialIds.map((id) => ({ submission_id: subId, material_id: id }))
-              )
-            : Promise.resolve(),
-        ]);
+        if (clientIds.length > 0)
+          await supabase.from("submission_clients").insert(clientIds.map((id) => ({ submission_id: subId, client_id: id })));
+        if (derivedPersonIds.length > 0)
+          await supabase.from("submission_people").insert(derivedPersonIds.map((id) => ({ submission_id: subId, person_id: id })));
+        if (derivedProjectIds.length > 0)
+          await supabase.from("submission_projects").insert(derivedProjectIds.map((id) => ({ submission_id: subId, project_id: id })));
+        if (materialIds.length > 0)
+          await supabase.from("submission_materials").insert(materialIds.map((id) => ({ submission_id: subId, material_id: id })));
 
         // 3. Upsert material_responses for rows with personId (saves person assignment even without response)
         const responsesToInsert = materialRows
