@@ -116,6 +116,8 @@ export function SettingsClient({ userId }: SettingsClientProps) {
   const [expandedPicklists, setExpandedPicklists] = useState<Set<string>>(new Set());
   const [editingPicklistCell, setEditingPicklistCell] = useState<{ table: string; id: string } | null>(null);
   const [editingPicklistValue, setEditingPicklistValue] = useState("");
+  const [addingToTable, setAddingToTable] = useState<string | null>(null);
+  const [newItemLabel, setNewItemLabel] = useState("");
 
   // ── Load picklists when tab is active ──
   useEffect(() => {
@@ -141,18 +143,20 @@ export function SettingsClient({ userId }: SettingsClientProps) {
   }
 
   async function handleAddPicklistItem(table: string) {
-    const label = prompt("Enter label for new item:");
-    if (!label?.trim()) return;
-    const value = label.trim().toLowerCase().replace(/\s+/g, "_");
+    if (!newItemLabel.trim()) return;
+    const label = newItemLabel.trim();
+    const value = label.toLowerCase().replace(/\s+/g, "_");
     const existing = picklistData[table] || [];
     const sort_order = existing.length > 0 ? Math.max(...existing.map((r) => r.sort_order)) + 1 : 0;
-    const { data, error } = await supabase.from(table).insert({ value, label: label.trim(), sort_order }).select("id, value, label, sort_order").single();
+    const { data, error } = await supabase.from(table).insert({ value, label, sort_order }).select("id, value, label, sort_order").single();
     if (error) {
-      alert("Failed to add item: " + error.message);
+      console.error("Add picklist error:", error);
       return;
     }
     invalidatePicklistCache(table);
     setPicklistData((prev) => ({ ...prev, [table]: [...(prev[table] || []), data as PicklistRow] }));
+    setNewItemLabel("");
+    setAddingToTable(null);
   }
 
   async function handleDeletePicklistItem(table: string, id: string) {
@@ -753,13 +757,41 @@ export function SettingsClient({ userId }: SettingsClientProps) {
                           </button>
                         </div>
                       ))}
-                      <button
-                        onClick={() => handleAddPicklistItem(pl.table)}
-                        className="flex w-full items-center gap-1.5 px-4 py-2 text-xs font-medium text-zinc-500 hover:text-black hover:bg-zinc-50 transition-colors"
-                      >
-                        <Plus className="h-3 w-3" />
-                        Add
-                      </button>
+                      {addingToTable === pl.table ? (
+                        <div className="flex items-center gap-2 px-4 py-2">
+                          <input
+                            autoFocus
+                            value={newItemLabel}
+                            onChange={(e) => setNewItemLabel(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") handleAddPicklistItem(pl.table);
+                              if (e.key === "Escape") { setAddingToTable(null); setNewItemLabel(""); }
+                            }}
+                            placeholder="New item label..."
+                            className="flex-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs outline-none focus:border-black"
+                          />
+                          <button
+                            onClick={() => handleAddPicklistItem(pl.table)}
+                            className="rounded bg-black px-2 py-1 text-xs text-white hover:bg-zinc-800"
+                          >
+                            Add
+                          </button>
+                          <button
+                            onClick={() => { setAddingToTable(null); setNewItemLabel(""); }}
+                            className="text-xs text-zinc-400 hover:text-zinc-600"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setAddingToTable(pl.table); setNewItemLabel(""); }}
+                          className="flex w-full items-center gap-1.5 px-4 py-2 text-xs font-medium text-zinc-500 hover:text-black hover:bg-zinc-50 transition-colors"
+                        >
+                          <Plus className="h-3 w-3" />
+                          Add
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
