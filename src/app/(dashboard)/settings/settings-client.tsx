@@ -745,7 +745,6 @@ export function SettingsClient({ userId }: SettingsClientProps) {
                                 className="cursor-text"
                               >
                                 <span className="text-sm text-black">{row.label}</span>
-                                <span className="ml-2 text-[11px] text-zinc-400">{row.value}</span>
                               </div>
                             )}
                           </div>
