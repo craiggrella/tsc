@@ -25,54 +25,24 @@ import {
   type AddressRecord,
   type SocialRecord,
 } from "@/components/shared/contact-info-editor";
-import type { PersonType, ExecLevel, BuyerType } from "@/types/database";
+import { usePicklist, toSelectOptions } from "@/lib/picklists";
 
 interface CompanyData {
   id: string;
   name: string;
 }
 
-const PERSON_TYPES: { value: PersonType; label: string }[] = [
-  { value: "contact", label: "Contact" },
-  { value: "potential_client", label: "Potential Client" },
-  { value: "vendor", label: "Vendor" },
-  { value: "assistant", label: "Assistant" },
-  { value: "executive", label: "Executive" },
-];
-
-const EXEC_LEVELS: { value: ExecLevel; label: string }[] = [
-  { value: "intern", label: "Intern" },
-  { value: "assistant", label: "Assistant" },
-  { value: "coordinator", label: "Coordinator" },
-  { value: "manager", label: "Manager" },
-  { value: "director", label: "Director" },
-  { value: "vice_president", label: "Vice President" },
-  { value: "senior_vice_president", label: "Senior VP" },
-  { value: "executive_vice_president", label: "Executive VP" },
-  { value: "president", label: "President" },
-  { value: "chair", label: "Chair" },
-];
-
-const BUYER_TYPES: { value: BuyerType; label: string }[] = [
-  { value: "Pod", label: "Pod" },
-  { value: "Studio", label: "Studio" },
-  { value: "Network", label: "Network" },
-  { value: "Streamer", label: "Streamer" },
-  { value: "Production Company", label: "Production Company" },
-  { value: "Other", label: "Other" },
-];
-
 const emptyForm = {
   full_name: "",
   first_name: null as string | null,
   last_name: null as string | null,
   title: null as string | null,
-  type: null as PersonType | null,
-  exec_level: null as ExecLevel | null,
+  type: null as string | null,
+  exec_level: null as string | null,
   company_id: null as string | null,
   department: [] as string[],
   assistant_id: null as string | null,
-  buyer_type: null as BuyerType | null,
+  buyer_type: null as string | null,
   notes: null as string | null,
 };
 
@@ -84,6 +54,12 @@ interface ContactDetailProps {
 export function ContactDetail({ contactId, userId }: ContactDetailProps) {
   const supabase = createClient();
   const router = useRouter();
+  const personTypesItems = usePicklist("list_contact_types");
+  const PERSON_TYPES = toSelectOptions(personTypesItems);
+  const execLevelsItems = usePicklist("list_contact_levels");
+  const EXEC_LEVELS = toSelectOptions(execLevelsItems);
+  const buyerTypesItems = usePicklist("list_buyer_types");
+  const BUYER_TYPES = toSelectOptions(buyerTypesItems);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -554,7 +530,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
             <Field label="Type">
               <Select
                 value={form.type || ""}
-                onChange={(e) => setForm({ ...form, type: (e.target.value || null) as PersonType | null })}
+                onChange={(e) => setForm({ ...form, type: (e.target.value || null) as string | null })}
                 options={PERSON_TYPES}
                 placeholder="Select..."
               />
@@ -562,7 +538,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
             <Field label="Level">
               <Select
                 value={form.exec_level || ""}
-                onChange={(e) => setForm({ ...form, exec_level: (e.target.value || null) as ExecLevel | null })}
+                onChange={(e) => setForm({ ...form, exec_level: (e.target.value || null) as string | null })}
                 options={EXEC_LEVELS}
                 placeholder="Select..."
               />
@@ -570,7 +546,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
             <Field label="Buyer Type">
               <Select
                 value={form.buyer_type || ""}
-                onChange={(e) => setForm({ ...form, buyer_type: (e.target.value || null) as BuyerType | null })}
+                onChange={(e) => setForm({ ...form, buyer_type: (e.target.value || null) as string | null })}
                 options={BUYER_TYPES}
                 placeholder="Not a buyer"
               />

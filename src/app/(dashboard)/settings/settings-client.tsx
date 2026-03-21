@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { User, Users, HardDrive, Check, Plus } from "lucide-react";
+import { User, Users, HardDrive, List, Check, Plus, ChevronDown, ChevronRight, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
@@ -21,6 +21,14 @@ import {
   type EmailRecord,
   type AddressRecord,
 } from "@/components/shared/contact-info-editor";
+import { PICKLIST_TABLES, invalidatePicklistCache } from "@/lib/picklists";
+
+interface PicklistRow {
+  id: string;
+  value: string;
+  label: string;
+  sort_order: number;
+}
 
 interface ProfileRow {
   id: string;
@@ -41,6 +49,7 @@ const mainTabs = [
   { id: "profile", label: "Profile", icon: User },
   { id: "team", label: "Team", icon: Users },
   { id: "integrations", label: "Integrations", icon: HardDrive },
+  { id: "picklists", label: "Picklists", icon: List },
 ];
 
 const ROLE_OPTIONS = [
@@ -101,6 +110,76 @@ export function SettingsClient({ userId }: SettingsClientProps) {
   const [teamSaved, setTeamSaved] = useState(false);
   const [teamDeleting, setTeamDeleting] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
+
+  // ── Picklists tab state ──
+  const [picklistData, setPicklistData] = useState<Record<string, PicklistRow[]>>({});
+  const [expandedPicklists, setExpandedPicklists] = useState<Set<string>>(new Set());
+  const [editingPicklistCell, setEditingPicklistCell] = useState<{ table: string; id: string } | null>(null);
+  const [editingPicklistValue, setEditingPicklistValue] = useState("");
+
+  // ── Load picklists when tab is active ──
+  useEffect(() => {
+    if (activeTab !== "picklists") return;
+    async function loadPicklists() {
+      const result: Record<string, PicklistRow[]> = {};
+      for (const pl of PICKLIST_TABLES) {
+        const { data } = await supabase.from(pl.table).select("id, value, label, sort_order").order("sort_order");
+        result[pl.table] = (data || []) as PicklistRow[];
+      }
+      setPicklistData(result);
+    }
+    loadPicklists();
+  }, [activeTab]);
+
+  function togglePicklistSection(table: string) {
+    setExpandedPicklists((prev) => {
+      const next = new Set(prev);
+      if (next.has(table)) next.delete(table);
+      else next.add(table);
+      return next;
+    });
+  }
+
+  async function handleAddPicklistItem(table: string) {
+    const label = prompt("Enter label for new item:");
+    if (!label?.trim()) return;
+    const value = label.trim().toLowerCase().replace(/\s+/g, "_");
+    const existing = picklistData[table] || [];
+    const sort_order = existing.length > 0 ? Math.max(...existing.map((r) => r.sort_order)) + 1 : 0;
+    const { data, error } = await supabase.from(table).insert({ value, label: label.trim(), sort_order }).select("id, value, label, sort_order").single();
+    if (error) {
+      alert("Failed to add item: " + error.message);
+      return;
+    }
+    invalidatePicklistCache(table);
+    setPicklistData((prev) => ({ ...prev, [table]: [...(prev[table] || []), data as PicklistRow] }));
+  }
+
+  async function handleDeletePicklistItem(table: string, id: string) {
+    if (!confirm("Delete this picklist item?")) return;
+    const { error } = await supabase.from(table).delete().eq("id", id);
+    if (error) {
+      alert("Failed to delete: " + error.message);
+      return;
+    }
+    invalidatePicklistCache(table);
+    setPicklistData((prev) => ({ ...prev, [table]: (prev[table] || []).filter((r) => r.id !== id) }));
+  }
+
+  async function handleSavePicklistLabel(table: string, id: string, newLabel: string) {
+    setEditingPicklistCell(null);
+    if (!newLabel.trim()) return;
+    const { error } = await supabase.from(table).update({ label: newLabel.trim() }).eq("id", id);
+    if (error) {
+      alert("Failed to save: " + error.message);
+      return;
+    }
+    invalidatePicklistCache(table);
+    setPicklistData((prev) => ({
+      ...prev,
+      [table]: (prev[table] || []).map((r) => (r.id === id ? { ...r, label: newLabel.trim() } : r)),
+    }));
+  }
 
   // ── Load data on mount ──
   useEffect(() => {
@@ -420,7 +499,7 @@ export function SettingsClient({ userId }: SettingsClientProps) {
         ))}
       </div>
 
-      <div className="mt-6 max-w-lg">
+      <div className={cn("mt-6", activeTab === "picklists" ? "max-w-2xl" : "max-w-lg")}>
         {/* ── Profile Tab ── */}
         {activeTab === "profile" && (
           <div className="space-y-6">
@@ -607,6 +686,85 @@ export function SettingsClient({ userId }: SettingsClientProps) {
                 </span>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ── Picklists Tab ── */}
+        {activeTab === "picklists" && (
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold text-black">Picklists</h2>
+            <p className="text-xs text-zinc-500">Manage lookup values used throughout the app.</p>
+
+            {PICKLIST_TABLES.map((pl) => {
+              const isOpen = expandedPicklists.has(pl.table);
+              const rows = picklistData[pl.table] || [];
+
+              return (
+                <div key={pl.table} className="rounded-md border border-zinc-200">
+                  <button
+                    onClick={() => togglePicklistSection(pl.table)}
+                    className="flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-zinc-50 transition-colors"
+                  >
+                    <span className="text-sm font-medium text-black">{pl.label}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-zinc-400">{rows.length}</span>
+                      {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />}
+                    </div>
+                  </button>
+
+                  {isOpen && (
+                    <div className="border-t border-zinc-200">
+                      {rows.length === 0 && (
+                        <p className="px-4 py-3 text-xs text-zinc-400">No items yet.</p>
+                      )}
+                      {rows.map((row) => (
+                        <div key={row.id} className="flex items-center gap-2 border-b border-zinc-100 px-4 py-1.5 last:border-b-0">
+                          <div className="flex-1 min-w-0">
+                            {editingPicklistCell?.table === pl.table && editingPicklistCell?.id === row.id ? (
+                              <input
+                                autoFocus
+                                value={editingPicklistValue}
+                                onChange={(e) => setEditingPicklistValue(e.target.value)}
+                                onBlur={() => handleSavePicklistLabel(pl.table, row.id, editingPicklistValue)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") handleSavePicklistLabel(pl.table, row.id, editingPicklistValue);
+                                  if (e.key === "Escape") setEditingPicklistCell(null);
+                                }}
+                                className="w-full rounded border border-zinc-300 px-2 py-0.5 text-sm text-black outline-none focus:border-zinc-400"
+                              />
+                            ) : (
+                              <div
+                                onClick={() => {
+                                  setEditingPicklistCell({ table: pl.table, id: row.id });
+                                  setEditingPicklistValue(row.label);
+                                }}
+                                className="cursor-text"
+                              >
+                                <span className="text-sm text-black">{row.label}</span>
+                                <span className="ml-2 text-[11px] text-zinc-400">{row.value}</span>
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleDeletePicklistItem(pl.table, row.id)}
+                            className="flex-shrink-0 text-zinc-300 hover:text-red-500 transition-colors"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => handleAddPicklistItem(pl.table)}
+                        className="flex w-full items-center gap-1.5 px-4 py-2 text-xs font-medium text-zinc-500 hover:text-black hover:bg-zinc-50 transition-colors"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

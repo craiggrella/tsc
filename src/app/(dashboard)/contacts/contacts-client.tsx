@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Search, Contact, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatPhone } from "@/lib/utils";
-import type { BuyerType, PersonType, ExecLevel } from "@/types/database";
+import { usePicklist, toSelectOptions } from "@/lib/picklists";
 
 interface CompanyData {
   id: string;
@@ -29,35 +29,6 @@ interface ContactRow {
   company: CompanyData | null;
 }
 
-const BUYER_TYPES: { value: BuyerType; label: string }[] = [
-  { value: "Pod", label: "Pod" },
-  { value: "Studio", label: "Studio" },
-  { value: "Network", label: "Network" },
-  { value: "Streamer", label: "Streamer" },
-  { value: "Production Company", label: "Production Co." },
-  { value: "Other", label: "Other" },
-];
-
-const PERSON_TYPES: { value: PersonType; label: string }[] = [
-  { value: "contact", label: "Contact" },
-  { value: "potential_client", label: "Potential Client" },
-  { value: "vendor", label: "Vendor" },
-  { value: "assistant", label: "Assistant" },
-  { value: "executive", label: "Executive" },
-];
-
-const EXEC_LEVELS: { value: ExecLevel; label: string }[] = [
-  { value: "intern", label: "Intern" },
-  { value: "assistant", label: "Assistant" },
-  { value: "coordinator", label: "Coordinator" },
-  { value: "manager", label: "Manager" },
-  { value: "director", label: "Director" },
-  { value: "vice_president", label: "VP" },
-  { value: "senior_vice_president", label: "SVP" },
-  { value: "executive_vice_president", label: "EVP" },
-  { value: "president", label: "President" },
-  { value: "chair", label: "Chair" },
-];
 
 function MultiFilterDropdown({
   label,
@@ -143,6 +114,12 @@ interface ContactsClientProps {
 export function ContactsClient({ userId }: ContactsClientProps) {
   const supabase = createClient();
   const router = useRouter();
+  const buyerTypesItems = usePicklist("list_buyer_types");
+  const BUYER_TYPES = toSelectOptions(buyerTypesItems);
+  const personTypesItems = usePicklist("list_contact_types");
+  const PERSON_TYPES = toSelectOptions(personTypesItems);
+  const execLevelsItems = usePicklist("list_contact_levels");
+  const EXEC_LEVELS = toSelectOptions(execLevelsItems);
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [contacts, setContacts] = useState<ContactRow[]>([]);

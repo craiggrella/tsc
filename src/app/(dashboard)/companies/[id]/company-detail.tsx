@@ -8,54 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Field, Input, Textarea } from "@/components/shared/detail-panel";
 import { MultiRelationPicker, type RelationOption } from "@/components/shared/relation-picker";
 import { formatPhone } from "@/lib/utils";
-import type { CompanyType, CompanyOutlet } from "@/types/database";
-
-const COMPANY_TYPES: { value: CompanyType; label: string }[] = [
-  { value: "studio", label: "Studio" },
-  { value: "network", label: "Network" },
-  { value: "production_company", label: "Production Company" },
-  { value: "agency", label: "Agency" },
-  { value: "management", label: "Management" },
-  { value: "law_firm", label: "Law Firm" },
-  { value: "distributor", label: "Distributor" },
-  { value: "guild", label: "Guild" },
-  { value: "publisher", label: "Publisher" },
-  { value: "publicity", label: "Publicity" },
-  { value: "theatre", label: "Theatre" },
-  { value: "financer", label: "Financer" },
-  { value: "hedge_fund", label: "Hedge Fund" },
-  { value: "business_management", label: "Business Management" },
-  { value: "financial_consultant", label: "Financial Consultant" },
-  { value: "news", label: "News" },
-  { value: "video_game_publisher", label: "Video Game Publisher" },
-];
-
-const COMPANY_OUTLETS: { value: CompanyOutlet; label: string }[] = [
-  { value: "broadcast", label: "Broadcast" },
-  { value: "cable", label: "Cable" },
-  { value: "digital", label: "Digital" },
-  { value: "independent", label: "Independent" },
-  { value: "major", label: "Major" },
-  { value: "pod", label: "Pod" },
-];
-
-const DEPARTMENTS = [
-  "Film",
-  "Television",
-  "Unscripted",
-  "Animation",
-  "Talent",
-  "Literary",
-  "Digital",
-  "Business Affairs",
-  "Legal",
-  "Marketing",
-  "Development",
-  "Production",
-  "Post-Production",
-  "Finance",
-  "Other",
-];
+import { usePicklist, toRelationOptions } from "@/lib/picklists";
 
 interface PersonRow {
   id: string;
@@ -74,6 +27,12 @@ interface CompanyDetailProps {
 export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
   const supabase = createClient();
   const router = useRouter();
+  const companyTypesItems = usePicklist("list_company_types");
+  const COMPANY_TYPES = toRelationOptions(companyTypesItems);
+  const outletsItems = usePicklist("list_outlets");
+  const COMPANY_OUTLETS = toRelationOptions(outletsItems);
+  const departmentsItems = usePicklist("list_departments");
+  const DEPARTMENTS = toRelationOptions(departmentsItems);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -199,7 +158,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
             <MultiRelationPicker
               value={form.types}
               onChange={(ids) => setForm({ ...form, types: ids })}
-              options={COMPANY_TYPES.map((ct) => ({ id: ct.value, label: ct.label }))}
+              options={COMPANY_TYPES}
               placeholder="Select types..."
             />
           </Field>
@@ -207,7 +166,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
             <MultiRelationPicker
               value={form.outlet}
               onChange={(ids) => setForm({ ...form, outlet: ids })}
-              options={COMPANY_OUTLETS.map((o) => ({ id: o.value, label: o.label }))}
+              options={COMPANY_OUTLETS}
               placeholder="Select outlets..."
             />
           </Field>
@@ -215,7 +174,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
             <MultiRelationPicker
               value={form.department}
               onChange={(ids) => setForm({ ...form, department: ids })}
-              options={DEPARTMENTS.map((d) => ({ id: d, label: d }))}
+              options={DEPARTMENTS}
               placeholder="Select departments..."
             />
           </Field>

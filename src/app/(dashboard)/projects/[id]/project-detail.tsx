@@ -11,7 +11,7 @@ import {
   type RelationOption,
 } from "@/components/shared/relation-picker";
 import { Field, Input, Select } from "@/components/shared/detail-panel";
-import type { ProjectStatus } from "@/types/database";
+import { usePicklist, toSelectOptions } from "@/lib/picklists";
 
 interface PersonData {
   id: string;
@@ -26,22 +26,9 @@ interface ProjectCompanyRow {
   designation: string;
 }
 
-const STATUSES: { value: ProjectStatus; label: string }[] = [
-  { value: "rumored", label: "Rumored" },
-  { value: "development", label: "Development" },
-  { value: "pilot", label: "Pilot" },
-  { value: "picked_up", label: "Picked Up" },
-  { value: "current", label: "Current" },
-  { value: "on_the_bubble", label: "On the Bubble" },
-  { value: "completed", label: "Completed" },
-  { value: "cancelled", label: "Cancelled" },
-];
-
-const COMPANY_DESIGNATIONS = ["Network", "Studio", "Production Company"];
-
 const emptyForm = {
   name: "",
-  status: "development" as ProjectStatus,
+  status: "development" as string,
   person_ids: [] as string[],
 };
 
@@ -53,6 +40,10 @@ interface ProjectDetailProps {
 export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
   const supabase = createClient();
   const router = useRouter();
+  const statusItems = usePicklist("list_project_statuses");
+  const STATUSES = toSelectOptions(statusItems);
+  const companyTypeItems = usePicklist("list_company_types");
+  const COMPANY_DESIGNATIONS = companyTypeItems.map((i) => i.label);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -268,7 +259,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
           <Field label="Status">
             <Select
               value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value as ProjectStatus })}
+              onChange={(e) => setForm({ ...form, status: e.target.value as string })}
               options={STATUSES}
             />
           </Field>

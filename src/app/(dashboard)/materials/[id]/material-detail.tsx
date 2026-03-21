@@ -15,78 +15,7 @@ import { Field, Input, Select } from "@/components/shared/detail-panel";
 import { FilePicker } from "@/components/shared/file-picker";
 import { FilePreview } from "@/components/shared/file-preview";
 
-// ─── Types ──────────────────────────────────────────
-
-type MaterialStatus =
-  | "not_yet_reviewed"
-  | "in_review"
-  | "coverage_available"
-  | "notes_given"
-  | "editing"
-  | "final_draft";
-
-type MaterialType = "Pilot" | "Movie" | "Episode" | "Treatment" | "Script" | "Other";
-
-// ─── Constants ──────────────────────────────────────
-
-const STATUSES: { value: MaterialStatus; label: string }[] = [
-  { value: "not_yet_reviewed", label: "Not Reviewed" },
-  { value: "in_review", label: "In Review" },
-  { value: "coverage_available", label: "Coverage Available" },
-  { value: "notes_given", label: "Notes Given" },
-  { value: "editing", label: "Editing" },
-  { value: "final_draft", label: "Final Draft" },
-];
-
-const MATERIAL_TYPES: { value: MaterialType; label: string }[] = [
-  { value: "Pilot", label: "Pilot" },
-  { value: "Movie", label: "Movie" },
-  { value: "Episode", label: "Episode" },
-  { value: "Treatment", label: "Treatment" },
-  { value: "Script", label: "Script" },
-  { value: "Other", label: "Other" },
-];
-
-const FORMATS: { value: string; label: string }[] = [
-  { value: "Feature", label: "Feature" },
-  { value: "Half-Hour", label: "Half-Hour" },
-  { value: "One-Hour", label: "One-Hour" },
-  { value: "Limited Series", label: "Limited Series" },
-  { value: "Short", label: "Short" },
-  { value: "Documentary", label: "Documentary" },
-  { value: "Animation", label: "Animation" },
-  { value: "Other", label: "Other" },
-];
-
-const GENRES: { value: string; label: string }[] = [
-  { value: "Action", label: "Action" },
-  { value: "Comedy", label: "Comedy" },
-  { value: "Drama", label: "Drama" },
-  { value: "Horror", label: "Horror" },
-  { value: "Sci-Fi", label: "Sci-Fi" },
-  { value: "Thriller", label: "Thriller" },
-  { value: "Romance", label: "Romance" },
-  { value: "Documentary", label: "Documentary" },
-  { value: "Family", label: "Family" },
-  { value: "Other", label: "Other" },
-];
-
-const SUB_GENRES: RelationOption[] = [
-  { id: "Romantic Comedy", label: "Romantic Comedy" },
-  { id: "Dark Comedy", label: "Dark Comedy" },
-  { id: "Psychological Thriller", label: "Psychological Thriller" },
-  { id: "Legal Drama", label: "Legal Drama" },
-  { id: "Medical Drama", label: "Medical Drama" },
-  { id: "Crime", label: "Crime" },
-  { id: "Procedural", label: "Procedural" },
-  { id: "Supernatural", label: "Supernatural" },
-  { id: "Coming of Age", label: "Coming of Age" },
-  { id: "Biopic", label: "Biopic" },
-  { id: "Period", label: "Period" },
-  { id: "Satire", label: "Satire" },
-  { id: "Mockumentary", label: "Mockumentary" },
-  { id: "Other", label: "Other" },
-];
+import { usePicklist, toSelectOptions, toRelationOptions } from "@/lib/picklists";
 
 const RESPONSE_COLORS: Record<string, string> = {
   love: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -100,11 +29,11 @@ const emptyForm = {
   is_client_material: false,
   client_id: null as string | null,
   direction: "Outgoing" as "Outgoing" | "Incoming",
-  material_type: "Script" as MaterialType,
+  material_type: "Script" as string,
   format: null as string | null,
   genre: null as string | null,
   sub_genre: [] as string[],
-  status: "not_yet_reviewed" as MaterialStatus,
+  status: "not_yet_reviewed" as string,
   box_file_id: null as string | null,
   file_url: null as string | null,
 };
@@ -129,6 +58,16 @@ interface MaterialDetailProps {
 export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
   const supabase = createClient();
   const router = useRouter();
+  const materialTypesItems = usePicklist("list_material_types");
+  const MATERIAL_TYPES = toSelectOptions(materialTypesItems);
+  const statusItems = usePicklist("list_statuses");
+  const STATUSES = toSelectOptions(statusItems);
+  const formatItems = usePicklist("list_formats");
+  const FORMATS = toSelectOptions(formatItems);
+  const genreItems = usePicklist("list_genres");
+  const GENRES = toSelectOptions(genreItems);
+  const subGenreItems = usePicklist("list_sub_genres");
+  const SUB_GENRES = toRelationOptions(subGenreItems);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -411,7 +350,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
           <Field label="Type">
             <Select
               value={form.material_type}
-              onChange={(e) => setForm({ ...form, material_type: e.target.value as MaterialType })}
+              onChange={(e) => setForm({ ...form, material_type: e.target.value as string })}
               options={MATERIAL_TYPES}
             />
           </Field>
@@ -426,7 +365,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
           <Field label="Status">
             <Select
               value={form.status}
-              onChange={(e) => setForm({ ...form, status: e.target.value as MaterialStatus })}
+              onChange={(e) => setForm({ ...form, status: e.target.value as string })}
               options={STATUSES}
             />
           </Field>

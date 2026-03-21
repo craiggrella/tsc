@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus, FileText, Filter } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { usePicklist, toSelectOptions } from "@/lib/picklists";
 
 // ─── Types ──────────────────────────────────────────
 
@@ -39,18 +40,11 @@ interface MaterialsClientProps {
   userId: string;
 }
 
-const STATUSES: { value: MaterialStatus; label: string }[] = [
-  { value: "not_yet_reviewed", label: "Not Reviewed" },
-  { value: "in_review", label: "In Review" },
-  { value: "coverage_available", label: "Coverage Available" },
-  { value: "notes_given", label: "Notes Given" },
-  { value: "editing", label: "Editing" },
-  { value: "final_draft", label: "Final Draft" },
-];
-
 export function MaterialsClient({ userId }: MaterialsClientProps) {
   const supabase = createClient();
   const router = useRouter();
+  const statusItems = usePicklist("list_statuses");
+  const STATUSES = toSelectOptions(statusItems);
   const [loading, setLoading] = useState(true);
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [statusFilter, setStatusFilter] = useState<MaterialStatus | "">("");
