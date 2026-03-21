@@ -399,13 +399,6 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
               onChange={(e) => setForm({ ...form, meeting_at: e.target.value || null })}
             />
           </Field>
-          <Field label="Location / Link">
-            <Input
-              value={form.location_link || ""}
-              onChange={(e) => setForm({ ...form, location_link: e.target.value || null })}
-              placeholder="Office, Zoom link, etc."
-            />
-          </Field>
         </div>
         <Field label="Location Type">
           <Select

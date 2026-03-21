@@ -59,10 +59,10 @@ interface DashboardClientProps {
 
 interface RecentCall {
   id: string;
-  about: string;
   call_status: string;
   priority: string | null;
-  due_date: string | null;
+  log_time: string | null;
+  contact_id: string | null;
   contact: { full_name: string } | null;
   client: { full_name: string } | null;
 }
@@ -81,6 +81,8 @@ export function DashboardClient({ userId }: DashboardClientProps) {
   const [firstName, setFirstName] = useState("");
   const [recentCalls, setRecentCalls] = useState<RecentCall[]>([]);
   const [upcomingMeetings, setUpcomingMeetings] = useState<UpcomingMeeting[]>([]);
+  const [callPhones, setCallPhones] = useState<Record<string, string>>({});
+  const [callEmails, setCallEmails] = useState<Record<string, string>>({});
 
   useEffect(() => {
     async function load() {
@@ -88,7 +90,7 @@ export function DashboardClient({ userId }: DashboardClientProps) {
         supabase.from("profiles").select("full_name").eq("id", userId).single(),
         supabase
           .from("calls")
-          .select("id, about, call_status, priority, due_date, contact:people!contact_id(full_name), client:clients!client_id(full_name)")
+          .select("id, call_status, priority, log_time, contact_id, contact:people!contact_id(full_name), client:clients!client_id(full_name)")
           .order("created_at", { ascending: false })
           .limit(10),
         supabase
@@ -99,8 +101,25 @@ export function DashboardClient({ userId }: DashboardClientProps) {
           .limit(5),
       ]);
       setFirstName(profile?.full_name?.split(" ")[0] || "");
-      setRecentCalls((calls || []) as unknown as RecentCall[]);
+      const typedCalls = (calls || []) as unknown as RecentCall[];
+      setRecentCalls(typedCalls);
       setUpcomingMeetings(meetings || []);
+
+      // Fetch primary phone + email for call contacts
+      const contactIds = [...new Set(typedCalls.map((c) => c.contact_id).filter(Boolean) as string[])];
+      if (contactIds.length > 0) {
+        const [{ data: phones }, { data: emails }] = await Promise.all([
+          supabase.from("contact_phones").select("entity_id, number, is_primary").eq("entity_type", "person").in("entity_id", contactIds).order("is_primary", { ascending: false }),
+          supabase.from("contact_emails").select("entity_id, address, is_primary").eq("entity_type", "person").in("entity_id", contactIds).order("is_primary", { ascending: false }),
+        ]);
+        const pm: Record<string, string> = {};
+        for (const p of phones || []) { if (!pm[p.entity_id]) pm[p.entity_id] = p.number; }
+        setCallPhones(pm);
+        const em: Record<string, string> = {};
+        for (const e of emails || []) { if (!em[e.entity_id]) em[e.entity_id] = e.address; }
+        setCallEmails(em);
+      }
+
       setLoading(false);
     }
     load();
@@ -150,12 +169,12 @@ export function DashboardClient({ userId }: DashboardClientProps) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-200 bg-zinc-50/50">
-                <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500">About</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500">Contact</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500">Client</th>
                 <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500">Status</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500">Priority</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500">Due</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500">Phone</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500">Email</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500">Date/Time</th>
               </tr>
             </thead>
             <tbody>
@@ -171,10 +190,7 @@ export function DashboardClient({ userId }: DashboardClientProps) {
                     key={c.id}
                     className="border-b border-zinc-100 last:border-0"
                   >
-                    <td className="px-3 py-2 text-black font-medium max-w-[180px] truncate">
-                      {c.about || "—"}
-                    </td>
-                    <td className="px-3 py-2 text-zinc-600 text-xs">
+                    <td className="px-3 py-2 text-zinc-700 text-xs">
                       {c.contact?.full_name || "—"}
                     </td>
                     <td className="px-3 py-2 text-zinc-600 text-xs">
@@ -183,12 +199,15 @@ export function DashboardClient({ userId }: DashboardClientProps) {
                     <td className="px-3 py-2">
                       <StatusBadge status={c.call_status} />
                     </td>
-                    <td className="px-3 py-2">
-                      <StatusBadge status={c.priority} />
+                    <td className="px-3 py-2 text-zinc-500 text-xs">
+                      {c.contact_id && callPhones[c.contact_id] ? callPhones[c.contact_id] : "—"}
                     </td>
                     <td className="px-3 py-2 text-zinc-500 text-xs">
-                      {c.due_date
-                        ? new Date(c.due_date).toLocaleDateString()
+                      {c.contact_id && callEmails[c.contact_id] ? callEmails[c.contact_id] : "—"}
+                    </td>
+                    <td className="px-3 py-2 text-zinc-500 text-xs">
+                      {c.log_time
+                        ? new Date(c.log_time).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })
                         : "—"}
                     </td>
                   </tr>

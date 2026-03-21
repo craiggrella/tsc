@@ -156,6 +156,9 @@ export function CallLogClient({ userId }: CallLogClientProps) {
   // New phones being added inline on the call panel
   const [newPhones, setNewPhones] = useState<{ designation: string; number: string }[]>([]);
 
+  // Table display: primary phone + email per contact
+  const [tablePhones, setTablePhones] = useState<Record<string, string>>({});
+  const [tableEmails, setTableEmails] = useState<Record<string, string>>({});
 
   // Filters — default to "open" (everything except completed) + current user
   const [statusFilter, setStatusFilter] = useState<CallStatus | "open" | "">("open");
@@ -184,6 +187,38 @@ export function CallLogClient({ userId }: CallLogClientProps) {
     }
     load();
   }, []);
+
+  // Fetch primary phone + email for contacts in the call list
+  useEffect(() => {
+    if (calls.length === 0) return;
+    const contactIds = [...new Set(calls.map((c) => c.contact_id).filter(Boolean) as string[])];
+    if (contactIds.length === 0) return;
+    Promise.all([
+      supabase
+        .from("contact_phones")
+        .select("entity_id, number, is_primary")
+        .eq("entity_type", "person")
+        .in("entity_id", contactIds)
+        .order("is_primary", { ascending: false }),
+      supabase
+        .from("contact_emails")
+        .select("entity_id, address, is_primary")
+        .eq("entity_type", "person")
+        .in("entity_id", contactIds)
+        .order("is_primary", { ascending: false }),
+    ]).then(([{ data: phones }, { data: emails }]) => {
+      const phoneMap: Record<string, string> = {};
+      for (const p of phones || []) {
+        if (!phoneMap[p.entity_id]) phoneMap[p.entity_id] = p.number;
+      }
+      setTablePhones(phoneMap);
+      const emailMap: Record<string, string> = {};
+      for (const e of emails || []) {
+        if (!emailMap[e.entity_id]) emailMap[e.entity_id] = e.address;
+      }
+      setTableEmails(emailMap);
+    });
+  }, [calls, supabase]);
 
   // Auto-open new call or specific call from URL params
   useEffect(() => {
@@ -603,10 +638,9 @@ export function CallLogClient({ userId }: CallLogClientProps) {
   // ─── Phone display helper ───────────────────────
 
   function getPhoneDisplay(call: CallRow): string {
-    if (call.preferred_phone === "custom" && call.phone_custom) return formatPhone(call.phone_custom);
-    // preferred_phone now stores a phone record UUID — we can't resolve it without a fetch
-    // Just show the custom number or "—" in the table; full info is in the detail panel
     if (call.phone_custom) return formatPhone(call.phone_custom);
+    // Show primary phone from contact record
+    if (call.contact_id && tablePhones[call.contact_id]) return formatPhone(tablePhones[call.contact_id]);
     return "—";
   }
 
@@ -775,6 +809,9 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                 Phone
               </th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
+                Email
+              </th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
                 <button
                   onClick={() => toggleSort("due_date")}
                   className="inline-flex items-center gap-1 hover:text-black transition-colors"
@@ -843,6 +880,9 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                   </td>
                   <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
                     {getPhoneDisplay(call)}
+                  </td>
+                  <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
+                    {call.contact_id && tableEmails[call.contact_id] ? tableEmails[call.contact_id] : "—"}
                   </td>
                   <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
                     {call.due_date

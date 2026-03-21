@@ -74,11 +74,11 @@ list of clents from the clients table -  shwoing info from individual client pag
         Their company name - lable this Company / Loan Out - this is a picklist from all companies table. Can add new if not there.
         Staff level - this shows their current staff level from whatever prject they are attached to that is listed as status current.
 
-    Phones area
-        can add phone and select type, cell, home, office, etc.
-        Emails - like phones - can add and select type
-        Addresses - like phones, can add and select type
-        Social links - ike phones can add urls and eslect types, instagram, facebook, website, etc
+        Contact info area
+            can add phone and select type, cell, home, office, etc.
+            Emails - like phones - can add and select type
+            Addresses - like phones, can add and select type
+            Social links - ike phones can add urls and eslect types, instagram, facebook, website, etc
 
     Grid tab
         Keep this exactly like it is now
@@ -95,7 +95,7 @@ list of clents from the clients table -  shwoing info from individual client pag
 
 
     client material tab
-        Shows title, type, format, genre, sub genre, status from individual client materials paages
+        Shows title, type, format, genre, sub genre, status from individual client materials paages that are associated with this client
 
     credits tab
         Credits shows which projects they are attached to
@@ -121,7 +121,7 @@ Individual client material page
     Link to box file
 
     In the bottom of this page should be a Submissions table, showing where this material has been submitted
-    Name of person to whom it was submitted, their current company, buyer type, project, and any response attached to that mateiral from that submission, if any.
+    Name of person to whom it was submitted, their current company, buyer type, project, and any response attached to that mateiral from that submission, if any. This pulls from individual submissions table for clients material associated.
     
 
 Contacts page
@@ -173,11 +173,10 @@ Table below good
             show log date and time of call, status, and if that call was about a specific client
 
 Companies page
-    List of companies from the companies table - just like ti is now
-
-    name
-    types
-    outlet
+    List of companies from the companies table - just like it is now:
+        name
+        types
+        outlet
     
     Individual Company page:
     A few tabs:
@@ -187,7 +186,6 @@ Companies page
 
     Info tab:
         Just like it is now, showing:
-
             - Company Name - simple text field
             Types, outlet, departments - all pick lists
             Sections for phones, emails, addresses, scoial links - just like on client and contact pages
