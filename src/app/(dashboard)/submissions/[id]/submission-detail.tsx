@@ -432,7 +432,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
             No materials added yet. Click &ldquo;Add Material&rdquo; to start.
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-zinc-200">
+          <div className="rounded-lg border border-zinc-200" style={{ overflow: "visible" }}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50/50">
@@ -477,24 +477,9 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
                           ))}
                         </select>
                       </td>
-                      <td className="px-2 py-2 min-w-[120px]">
-                        <select
-                          value=""
-                          onChange={(e) => {
-                            if (e.target.value && !item.projectIds.includes(e.target.value)) {
-                              updateItem(idx, { projectIds: [...item.projectIds, e.target.value] });
-                            }
-                            e.target.value = "";
-                          }}
-                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none w-full"
-                        >
-                          <option value="">{item.projectIds.length > 0 ? `${item.projectIds.length} project${item.projectIds.length > 1 ? "s" : ""}` : "Projects..."}</option>
-                          {projects.filter((p) => !item.projectIds.includes(p.id)).map((p) => (
-                            <option key={p.id} value={p.id}>{p.label}</option>
-                          ))}
-                        </select>
+                      <td className="px-2 py-2 min-w-[120px] align-top">
                         {item.projectIds.length > 0 && (
-                          <div className="flex flex-wrap gap-1 mt-1">
+                          <div className="flex flex-wrap gap-1 mb-1">
                             {item.projectIds.map((pid) => {
                               const name = projects.find((p) => p.id === pid)?.label || "";
                               return (
@@ -506,6 +491,21 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
                             })}
                           </div>
                         )}
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value && !item.projectIds.includes(e.target.value)) {
+                              updateItem(idx, { projectIds: [...item.projectIds, e.target.value] });
+                            }
+                            e.target.value = "";
+                          }}
+                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none w-full"
+                        >
+                          <option value="">Add project...</option>
+                          {projects.filter((p) => !item.projectIds.includes(p.id)).map((p) => (
+                            <option key={p.id} value={p.id}>{p.label}</option>
+                          ))}
+                        </select>
                       </td>
                       <td className="px-2 py-2 min-w-[160px]">
                         <RelationPicker
