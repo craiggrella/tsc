@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Plus, Search, Clapperboard, Filter } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -37,9 +38,9 @@ export function ProjectsClient({ userId }: ProjectsClientProps) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ProjectStatus | "">("");
 
-  // Table display cache: project_id -> { networks, studios, prodCos }
+  // Table display cache: project_id -> array of { name, id }
   const [tableCache, setTableCache] = useState<
-    Record<string, { networks: string[]; studios: string[]; prodCos: string[] }>
+    Record<string, { id: string; name: string }[]>
   >({});
 
   useEffect(() => {
@@ -68,17 +69,18 @@ export function ProjectsClient({ userId }: ProjectsClientProps) {
 
     supabase
       .from("project_companies")
-      .select("project_id, designation, company:companies(name)")
+      .select("project_id, company:companies(id, name)")
       .in("project_id", ids)
       .then(({ data }) => {
-        const cache: typeof tableCache = {};
-        for (const id of ids) cache[id] = { networks: [], studios: [], prodCos: [] };
+        const cache: Record<string, { id: string; name: string }[]> = {};
+        for (const id of ids) cache[id] = [];
         for (const row of data || []) {
-          const r = row as unknown as { project_id: string; designation: string; company: { name: string } | null };
+          const r = row as unknown as { project_id: string; company: { id: string; name: string } | null };
           if (!r.company || !cache[r.project_id]) continue;
-          if (r.designation === "Network") cache[r.project_id].networks.push(r.company.name);
-          else if (r.designation === "Studio") cache[r.project_id].studios.push(r.company.name);
-          else if (r.designation === "Production Company") cache[r.project_id].prodCos.push(r.company.name);
+          // Avoid duplicates
+          if (!cache[r.project_id].some((c) => c.id === r.company!.id)) {
+            cache[r.project_id].push({ id: r.company.id, name: r.company.name });
+          }
         }
         setTableCache((prev) => ({ ...prev, ...cache }));
       });
@@ -136,22 +138,20 @@ export function ProjectsClient({ userId }: ProjectsClientProps) {
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Name</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Status</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Network(s)</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Studio(s)</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Prod Co(s)</th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Companies</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-12 text-center text-sm text-zinc-400">
+                <td colSpan={3} className="px-3 py-12 text-center text-sm text-zinc-400">
                   <Clapperboard className="mx-auto mb-2 h-8 w-8 text-zinc-300" />
                   No projects found.
                 </td>
               </tr>
             ) : (
               filtered.map((project) => {
-                const tc = tableCache[project.id];
+                const companies = tableCache[project.id] || [];
                 return (
                   <tr
                     key={project.id}
@@ -162,9 +162,26 @@ export function ProjectsClient({ userId }: ProjectsClientProps) {
                     <td className="px-3 py-2.5">
                       <StatusBadge status={project.status} />
                     </td>
-                    <td className="px-3 py-2.5 text-zinc-700 text-xs">{tc?.networks.join(", ") || "\u2014"}</td>
-                    <td className="px-3 py-2.5 text-zinc-700 text-xs">{tc?.studios.join(", ") || "\u2014"}</td>
-                    <td className="px-3 py-2.5 text-zinc-700 text-xs">{tc?.prodCos.join(", ") || "\u2014"}</td>
+                    <td className="px-3 py-2.5 text-xs">
+                      {companies.length === 0 ? (
+                        <span className="text-zinc-400">{"\u2014"}</span>
+                      ) : (
+                        <span className="text-zinc-700">
+                          {companies.map((c, i) => (
+                            <span key={c.id}>
+                              {i > 0 && ", "}
+                              <Link
+                                href={`/companies/${c.id}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="hover:text-black hover:underline"
+                              >
+                                {c.name}
+                              </Link>
+                            </span>
+                          ))}
+                        </span>
+                      )}
+                    </td>
                   </tr>
                 );
               })

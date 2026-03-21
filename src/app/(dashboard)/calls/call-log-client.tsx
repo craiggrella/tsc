@@ -116,7 +116,6 @@ function nowLocal() {
 }
 
 const emptyCall = {
-  about: "",
   contact_id: null as string | null,
   client_id: null as string | null,
   contact_type: null as "person" | "client" | null,
@@ -414,7 +413,6 @@ export function CallLogClient({ userId }: CallLogClientProps) {
     // Detect contact_type: if no contact but has client, it's a client call
     const contactType = call.contact_id ? "person" as const : call.client_id ? "client" as const : null;
     setForm({
-      about: call.about,
       contact_id: call.contact_id,
       client_id: call.client_id,
       contact_type: contactType,
@@ -443,7 +441,6 @@ export function CallLogClient({ userId }: CallLogClientProps) {
     setSaving(true);
     try {
       const payload = {
-        about: form.about,
         contact_id: form.contact_id,
         client_id: form.client_id,
         call_status: form.call_status,
@@ -751,9 +748,6 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                 />
               </th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
-                About
-              </th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
                 Contact
               </th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
@@ -804,7 +798,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
             {filteredCalls.length === 0 ? (
               <tr>
                 <td
-                  colSpan={9}
+                  colSpan={8}
                   className="px-3 py-12 text-center text-sm text-zinc-400"
                 >
                   <Phone className="mx-auto mb-2 h-8 w-8 text-zinc-300" />
@@ -828,9 +822,6 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                       onChange={() => toggleSelect(call.id)}
                       className="accent-black"
                     />
-                  </td>
-                  <td className="px-3 py-2.5 font-medium text-black whitespace-nowrap">
-                    {call.about || "—"}
                   </td>
                   <td className="px-3 py-2.5 text-zinc-700 whitespace-nowrap">
                     {call.contact?.full_name || call.client?.full_name || "—"}
@@ -1092,15 +1083,6 @@ export function CallLogClient({ userId }: CallLogClientProps) {
               />
             </Field>
           </div>
-
-          {/* About */}
-          <Field label="About">
-            <Input
-              value={form.about}
-              onChange={(e) => setForm({ ...form, about: e.target.value })}
-              placeholder="What is this call about?"
-            />
-          </Field>
 
           {/* Re: Client — auto-filled when a client is the caller */}
           <Field label="Re: Client">

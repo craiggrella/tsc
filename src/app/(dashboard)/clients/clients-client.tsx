@@ -20,6 +20,7 @@ interface ClientRow {
   notes: string | null;
   created_at: string;
   company: CompanyData | null;
+  current_project?: string | null;
 }
 
 interface ClientsClientProps {
@@ -35,11 +36,36 @@ export function ClientsClient({ userId }: ClientsClientProps) {
 
   useEffect(() => {
     async function load() {
-      const { data: clientsData } = await supabase
-        .from("clients")
-        .select("*, company:companies!company_id(id, name)")
-        .order("full_name");
-      setClients(clientsData || []);
+      const [{ data: clientsData }, { data: creditsData }] = await Promise.all([
+        supabase
+          .from("clients")
+          .select("*, company:companies!company_id(id, name)")
+          .order("full_name"),
+        supabase
+          .from("client_credits")
+          .select("client_id, project_name, project:projects!project_id(name)")
+          .eq("credit_status", "current"),
+      ]);
+
+      // Build map of client_id -> current project name
+      const currentProjectMap = new Map<string, string>();
+      for (const c of creditsData || []) {
+        const r = c as unknown as { client_id: string; project_name: string; project: { name: string } | null };
+        const name = r.project?.name || r.project_name;
+        if (name && !currentProjectMap.has(r.client_id)) {
+          currentProjectMap.set(r.client_id, name);
+        } else if (name && currentProjectMap.has(r.client_id)) {
+          // Multiple current projects - append
+          currentProjectMap.set(r.client_id, currentProjectMap.get(r.client_id) + ", " + name);
+        }
+      }
+
+      const enriched = (clientsData || []).map((client) => ({
+        ...client,
+        current_project: currentProjectMap.get(client.id) || null,
+      })) as ClientRow[];
+
+      setClients(enriched);
       setLoading(false);
     }
     load();
@@ -51,7 +77,8 @@ export function ClientsClient({ userId }: ClientsClientProps) {
     return clients.filter(
       (c) =>
         c.full_name.toLowerCase().includes(q) ||
-        c.company?.name.toLowerCase().includes(q)
+        c.company?.name.toLowerCase().includes(q) ||
+        c.current_project?.toLowerCase().includes(q)
     );
   }, [clients, search]);
 
@@ -90,7 +117,7 @@ export function ClientsClient({ userId }: ClientsClientProps) {
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Name</th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Company</th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Current Project</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Staff Level</th>
             </tr>
           </thead>
@@ -110,7 +137,7 @@ export function ClientsClient({ userId }: ClientsClientProps) {
                   className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                 >
                   <td className="px-3 py-2.5 font-medium text-black">{client.full_name}</td>
-                  <td className="px-3 py-2.5 text-zinc-700">{client.company?.name || "\u2014"}</td>
+                  <td className="px-3 py-2.5 text-zinc-700">{client.current_project || "\u2014"}</td>
                   <td className="px-3 py-2.5 text-zinc-500">{client.staff_level || "\u2014"}</td>
                 </tr>
               ))

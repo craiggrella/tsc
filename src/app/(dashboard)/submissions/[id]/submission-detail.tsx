@@ -80,16 +80,6 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
   const [allMaterialsByClient, setAllMaterialsByClient] = useState<Record<string, { id: string; title: string }[]>>({});
   const [allMaterialsFlat, setAllMaterialsFlat] = useState<{ id: string; title: string }[]>([]);
 
-  // Meetings state
-  interface SubmissionMeetingRow {
-    key: string;
-    clientId: string;
-    personIds: string[];
-    projectIds: string[];
-    meetingId: string | null;
-    status: string;
-  }
-  const [meetingRows, setMeetingRows] = useState<SubmissionMeetingRow[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -205,31 +195,6 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         }
       }
 
-      // Load linked meetings
-      const { data: smMeetingsData } = await supabase
-        .from("submission_meetings")
-        .select("meeting_id")
-        .eq("submission_id", submissionId);
-      if (smMeetingsData && smMeetingsData.length > 0) {
-        const meetingIds = smMeetingsData.map(s => s.meeting_id);
-        const { data: meetings } = await supabase
-          .from("meetings")
-          .select("id, title, meeting_status")
-          .in("id", meetingIds);
-        const { data: mc } = await supabase.from("meeting_clients").select("meeting_id, client_id").in("meeting_id", meetingIds);
-        const { data: mp } = await supabase.from("meeting_people").select("meeting_id, person_id").in("meeting_id", meetingIds);
-        const { data: mpr } = await supabase.from("meeting_projects").select("meeting_id, project_id").in("meeting_id", meetingIds);
-
-        const mtgRows: SubmissionMeetingRow[] = [];
-        for (const m of meetings || []) {
-          const clientId = mc?.find(c => c.meeting_id === m.id)?.client_id || "";
-          const personIds = (mp || []).filter(p => p.meeting_id === m.id).map(p => p.person_id);
-          const projectIds = (mpr || []).filter(p => p.meeting_id === m.id).map(p => p.project_id);
-          mtgRows.push({ key: genKey(), clientId, personIds, projectIds, meetingId: m.id, status: m.meeting_status });
-        }
-        setMeetingRows(mtgRows);
-      }
-
       setForm({
         description: sub.description,
         status: sub.status,
@@ -298,26 +263,6 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
     setPeople((prev) => [...prev, { id: data.id, full_name: data.full_name }].sort((a, b) => a.full_name.localeCompare(b.full_name)));
     return { id: data.id, label: data.full_name };
   }, [supabase]);
-
-  function addMeetingRow() {
-    // Auto-fill project from material rows if there's one
-    const matProjects = [...new Set(materialRows.map((r) => r.projectId).filter(Boolean))];
-    const autoProject = matProjects.length === 1 ? matProjects[0] : "";
-    setMeetingRows(prev => [...prev, { key: genKey(), clientId: "", personIds: [], projectIds: autoProject ? [autoProject] : [], meetingId: null, status: "need_to_set" }]);
-  }
-
-  function updateMeetingRow(idx: number, patch: Partial<SubmissionMeetingRow>) {
-    setMeetingRows(prev => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
-  }
-
-  function removeMeetingRow(idx: number) {
-    const row = meetingRows[idx];
-    if (row.meetingId) {
-      supabase.from("submission_meetings").delete().eq("meeting_id", row.meetingId).eq("submission_id", submissionId);
-      supabase.from("meetings").delete().eq("id", row.meetingId);
-    }
-    setMeetingRows(prev => prev.filter((_, i) => i !== idx));
-  }
 
   function updateRow(idx: number, patch: Partial<MaterialRow>) {
     setMaterialRows((prev) => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
@@ -451,41 +396,12 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
       // The removeRow function already handles deleting individual responses.
       // But if an entire material is removed (all its rows deleted), we should also clean up.
 
-      // Save new meetings
-      for (const mRow of meetingRows) {
-        if (mRow.meetingId) continue;
-        if (!mRow.clientId || mRow.personIds.length === 0) continue;
-
-        const clientName = allClients.find(c => c.id === mRow.clientId)?.full_name || "";
-        const personNames = mRow.personIds.map(pid => people.find(p => p.id === pid)?.full_name || personOptions.find(p => p.id === pid)?.label || "").filter(Boolean);
-        const title = `${clientName} — ${personNames.join(", ")}`;
-
-        const { data: newMeeting } = await supabase
-          .from("meetings")
-          .insert({ title, meeting_status: mRow.status || "need_to_set" })
-          .select("id")
-          .single();
-
-        if (newMeeting) {
-          await supabase.from("meeting_clients").insert({ meeting_id: newMeeting.id, client_id: mRow.clientId });
-          await supabase.from("submission_meetings").insert({ submission_id: submissionId, meeting_id: newMeeting.id });
-          if (mRow.personIds.length > 0) {
-            await supabase.from("meeting_people").insert(mRow.personIds.map(pid => ({ meeting_id: newMeeting.id, person_id: pid })));
-          }
-          if (mRow.projectIds.length > 0) {
-            await supabase.from("meeting_projects").insert(mRow.projectIds.map(pid => ({ meeting_id: newMeeting.id, project_id: pid })));
-          }
-          mRow.meetingId = newMeeting.id;
-        }
-      }
-      setMeetingRows([...meetingRows]);
-
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } finally {
       setSaving(false);
     }
-  }, [form, submissionId, supabase, materialRows, allClients, personOptions, meetingRows, people]);
+  }, [form, submissionId, supabase, materialRows, allClients, personOptions, people]);
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Delete this submission?")) return;
@@ -701,104 +617,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
           </div>
         </Field>
 
-        {/* 5. Meetings */}
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-medium text-zinc-500">Meetings</p>
-            <button onClick={addMeetingRow} className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-black transition-colors">
-              <Plus className="h-3 w-3" /> Meeting
-            </button>
-          </div>
-          {meetingRows.length > 0 && (
-            <div className="overflow-x-auto rounded-md border border-zinc-200">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-200 bg-zinc-50 text-left">
-                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Client</th>
-                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Meeting With</th>
-                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs">Project</th>
-                    <th className="px-3 py-2 font-medium text-zinc-500 text-xs w-24">Status</th>
-                    <th className="px-3 py-2 w-8"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {meetingRows.map((mRow, idx) => (
-                    <tr key={mRow.key} className="border-b border-zinc-100 last:border-0">
-                      <td className="px-3 py-2">
-                        {mRow.meetingId ? (
-                          <Link href={`/meetings/${mRow.meetingId}`} className="text-xs text-black hover:underline">
-                            {allClients.find(c => c.id === mRow.clientId)?.full_name || "—"}
-                          </Link>
-                        ) : (
-                          <select value={mRow.clientId} onChange={e => updateMeetingRow(idx, { clientId: e.target.value })} className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs outline-none">
-                            <option value="">Select client...</option>
-                            {[...new Set(materialRows.map(r => r.clientId).filter(Boolean))].map(cid => {
-                              const name = allClients.find(c => c.id === cid)?.full_name;
-                              return name ? <option key={cid} value={cid}>{name}</option> : null;
-                            })}
-                            <option disabled>──────────</option>
-                            {allClients.filter(c => !materialRows.some(r => r.clientId === c.id)).map(c => (
-                              <option key={c.id} value={c.id}>{c.full_name}</option>
-                            ))}
-                          </select>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 min-w-[180px]">
-                        <MultiRelationPicker
-                          value={mRow.personIds}
-                          onChange={(ids) => updateMeetingRow(idx, { personIds: ids })}
-                          options={[
-                            // People from material rows first
-                            ...[...new Set(materialRows.map((r) => r.personId).filter(Boolean))].map((pid) => ({
-                              id: pid,
-                              label: personOptions.find((p) => p.id === pid)?.label || people.find((p) => p.id === pid)?.full_name || "",
-                            })),
-                            // Then all other people
-                            ...people
-                              .filter((p) => !materialRows.some((r) => r.personId === p.id))
-                              .map((p) => ({ id: p.id, label: p.full_name })),
-                          ]}
-                          placeholder="Select people..."
-                        />
-                      </td>
-                      <td className="px-3 py-2 min-w-[150px]">
-                        <MultiRelationPicker
-                          value={mRow.projectIds}
-                          onChange={(ids) => updateMeetingRow(idx, { projectIds: ids })}
-                          options={projectOptions}
-                          placeholder="Select projects..."
-                          onAdd={createProject}
-                          addLabel="Create project"
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <select
-                          value={mRow.status}
-                          onChange={(e) => updateMeetingRow(idx, { status: e.target.value })}
-                          className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-xs text-zinc-600 outline-none"
-                        >
-                          <option value="need_to_set">To Set</option>
-                          <option value="scheduled">Scheduled</option>
-                          <option value="completed">Completed</option>
-                          <option value="cancelled">Cancelled</option>
-                          <option value="need_to_reschedule">Reschedule</option>
-                        </select>
-                      </td>
-                      <td className="px-3 py-2">
-                        <button onClick={() => removeMeetingRow(idx)} className="text-zinc-400 hover:text-red-500 transition-colors">✕</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {meetingRows.length === 0 && (
-            <p className="text-xs text-zinc-400">No meetings scheduled. Click + Meeting to add one.</p>
-          )}
-        </div>
-
-        {/* 6. Notes */}
+        {/* 5. Notes */}
         <Field label="Notes">
           <Textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value || null })} placeholder="Notes..." />
         </Field>

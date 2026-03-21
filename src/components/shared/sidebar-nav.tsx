@@ -21,14 +21,14 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Call Log", href: "/calls", icon: Phone },
+  { label: "Call Sheet", href: "/calls", icon: Phone },
   { label: "Meetings", href: "/meetings", icon: Calendar },
   { label: "Submissions", href: "/submissions", icon: Send },
   { label: "Clients", href: "/clients", icon: Users },
+  { label: "Client Material", href: "/materials", icon: FileText },
   { label: "Contacts", href: "/contacts", icon: Contact },
   { label: "Companies", href: "/companies", icon: Building2 },
   { label: "Projects", href: "/projects", icon: Clapperboard },
-  { label: "Client Material", href: "/materials", icon: FileText },
   { label: "Files", href: "/files", icon: FolderOpen },
   { label: "Settings", href: "/settings", icon: Settings },
 ];

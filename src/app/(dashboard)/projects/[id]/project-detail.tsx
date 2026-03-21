@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Plus, X } from "lucide-react";
+import { ArrowLeft, Loader2, Plus, X, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -12,12 +12,17 @@ import {
 } from "@/components/shared/relation-picker";
 import { Field, Input, Select } from "@/components/shared/detail-panel";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { formatPhone } from "@/lib/utils";
 
 interface PersonData {
   id: string;
   full_name: string;
   title: string | null;
   exec_level: string | null;
+  department: string[];
+  buyer_type: string | null;
+  primary_phone: string | null;
+  primary_email: string | null;
 }
 
 interface ProjectCompanyRow {
@@ -51,22 +56,21 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
   const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState("info");
 
-  const [people, setPeople] = useState<PersonData[]>([]);
+  const [people, setPeople] = useState<{ id: string; full_name: string; title: string | null; exec_level: string | null }[]>([]);
   const [companyList, setCompanyList] = useState<{ id: string; name: string }[]>([]);
   const [projectCompanies, setProjectCompanies] = useState<ProjectCompanyRow[]>([]);
   const [origCompanyIds, setOrigCompanyIds] = useState<Set<string>>(new Set());
 
   // Related data for tabs
   const [relatedPeople, setRelatedPeople] = useState<PersonData[]>([]);
-  const [expandedPerson, setExpandedPerson] = useState<string | null>(null);
   const [relatedClients, setRelatedClients] = useState<
-    { id: string; full_name: string; level: string | null }[]
+    { id: string; full_name: string; level: string | null; status: string | null; start_year: number | null; end_year: number | null }[]
   >([]);
   const [relatedSubmissions, setRelatedSubmissions] = useState<
-    { id: string; description: string; status: string }[]
+    { id: string; description: string; status: string; client_name: string | null; material_title: string | null; person_name: string | null; person_id: string | null; response: string | null }[]
   >([]);
   const [relatedMeetings, setRelatedMeetings] = useState<
-    { id: string; title: string; meeting_status: string; meeting_at: string | null }[]
+    { id: string; title: string; meeting_status: string; meeting_at: string | null; clients: string[]; people: string[] }[]
   >([]);
 
   useEffect(() => {
@@ -86,9 +90,9 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
         supabase.from("people").select("id, full_name, title, exec_level").order("full_name"),
         supabase.from("project_companies").select("id, company_id, designation").eq("project_id", projectId),
         supabase.from("project_people").select("person_id").eq("project_id", projectId),
-        supabase.from("client_credits").select("client:clients!client_id(id, full_name), level").eq("project_id", projectId),
-        supabase.from("submission_projects").select("submission:submissions(id, description, status)").eq("project_id", projectId),
-        supabase.from("meeting_projects").select("meeting:meetings(id, title, meeting_status, meeting_at)").eq("project_id", projectId),
+        supabase.from("client_credits").select("client:clients!client_id(id, full_name), level, status, start_year, end_year").eq("project_id", projectId),
+        supabase.from("submission_projects").select("submission_id, submission:submissions(id, description, status)").eq("project_id", projectId),
+        supabase.from("meeting_projects").select("meeting_id, meeting:meetings(id, title, meeting_status, meeting_at)").eq("project_id", projectId),
       ]);
 
       if (!project) {
@@ -104,8 +108,45 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
       setOrigCompanyIds(new Set(pcList.filter((r) => r.id).map((r) => r.id!)));
 
       const personIds = (ppl || []).map((r) => r.person_id);
-      const matchedPeople = (peopleData || []).filter((p) => personIds.includes(p.id));
-      setRelatedPeople(matchedPeople);
+
+      // Fetch full person data including department, buyer_type, primary phone/email
+      let enrichedPeople: PersonData[] = [];
+      if (personIds.length > 0) {
+        const { data: fullPeople } = await supabase
+          .from("people")
+          .select("id, full_name, title, exec_level, department, buyer_type")
+          .in("id", personIds);
+        const [{ data: personPhones }, { data: personEmails }] = await Promise.all([
+          supabase
+            .from("contact_phones")
+            .select("entity_id, number")
+            .eq("entity_type", "person")
+            .in("entity_id", personIds)
+            .eq("is_primary", true),
+          supabase
+            .from("contact_emails")
+            .select("entity_id, address")
+            .eq("entity_type", "person")
+            .in("entity_id", personIds)
+            .eq("is_primary", true),
+        ]);
+        const phoneMap: Record<string, string> = {};
+        const emailMap: Record<string, string> = {};
+        for (const p of personPhones || []) phoneMap[p.entity_id] = p.number;
+        for (const e of personEmails || []) emailMap[e.entity_id] = e.address;
+
+        enrichedPeople = (fullPeople || []).map((p) => ({
+          id: p.id,
+          full_name: p.full_name,
+          title: p.title,
+          exec_level: p.exec_level,
+          department: p.department || [],
+          buyer_type: p.buyer_type,
+          primary_phone: phoneMap[p.id] || null,
+          primary_email: emailMap[p.id] || null,
+        }));
+      }
+      setRelatedPeople(enrichedPeople);
 
       setForm({
         name: project.name,
@@ -117,20 +158,102 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
         (credits || [])
           .map((c: Record<string, unknown>) => {
             const client = c.client as { id: string; full_name: string } | null;
-            return client ? { ...client, level: c.level as string | null } : null;
+            return client
+              ? {
+                  ...client,
+                  level: c.level as string | null,
+                  status: c.status as string | null,
+                  start_year: c.start_year as number | null,
+                  end_year: c.end_year as number | null,
+                }
+              : null;
           })
-          .filter(Boolean) as { id: string; full_name: string; level: string | null }[]
+          .filter(Boolean) as { id: string; full_name: string; level: string | null; status: string | null; start_year: number | null; end_year: number | null }[]
       );
-      setRelatedSubmissions(
-        (subs || [])
-          .map((s: Record<string, unknown>) => s.submission as { id: string; description: string; status: string } | null)
-          .filter(Boolean) as { id: string; description: string; status: string }[]
-      );
-      setRelatedMeetings(
-        (mtgs || [])
-          .map((m: Record<string, unknown>) => m.meeting as { id: string; title: string; meeting_status: string; meeting_at: string | null } | null)
-          .filter(Boolean) as { id: string; title: string; meeting_status: string; meeting_at: string | null }[]
-      );
+
+      // Enrich submissions with client, material, person info
+      const submissionRows = (subs || []).map((s: Record<string, unknown>) => ({
+        submission_id: s.submission_id as string,
+        submission: s.submission as { id: string; description: string; status: string } | null,
+      })).filter((s) => s.submission);
+
+      const subIds = submissionRows.map((s) => s.submission_id);
+      let enrichedSubs: typeof relatedSubmissions = [];
+      if (subIds.length > 0) {
+        const [{ data: subClients }, { data: subMats }, { data: subPeople }] = await Promise.all([
+          supabase.from("submission_clients").select("submission_id, client:clients!client_id(full_name)").in("submission_id", subIds),
+          supabase.from("submission_materials").select("submission_id, material:client_materials(title)").in("submission_id", subIds),
+          supabase.from("submission_people").select("submission_id, person:people!person_id(id, full_name)").in("submission_id", subIds),
+        ]);
+        const clientMap: Record<string, string> = {};
+        const matMap: Record<string, string> = {};
+        const personMap: Record<string, { id: string; name: string }> = {};
+        for (const row of subClients || []) {
+          const r = row as unknown as { submission_id: string; client: { full_name: string } | null };
+          if (r.client) clientMap[r.submission_id] = r.client.full_name;
+        }
+        for (const row of subMats || []) {
+          const r = row as unknown as { submission_id: string; material: { title: string } | null };
+          if (r.material) matMap[r.submission_id] = r.material.title;
+        }
+        for (const row of subPeople || []) {
+          const r = row as unknown as { submission_id: string; person: { id: string; full_name: string } | null };
+          if (r.person) personMap[r.submission_id] = { id: r.person.id, name: r.person.full_name };
+        }
+
+        enrichedSubs = submissionRows.map((s) => ({
+          id: s.submission!.id,
+          description: s.submission!.description,
+          status: s.submission!.status,
+          client_name: clientMap[s.submission_id] || null,
+          material_title: matMap[s.submission_id] || null,
+          person_name: personMap[s.submission_id]?.name || null,
+          person_id: personMap[s.submission_id]?.id || null,
+          response: null,
+        }));
+      }
+      setRelatedSubmissions(enrichedSubs);
+
+      // Enrich meetings with clients and people
+      const meetingRows = (mtgs || []).map((m: Record<string, unknown>) => ({
+        meeting_id: m.meeting_id as string,
+        meeting: m.meeting as { id: string; title: string; meeting_status: string; meeting_at: string | null } | null,
+      })).filter((m) => m.meeting);
+
+      const meetingIds = meetingRows.map((m) => m.meeting_id);
+      let enrichedMeetings: typeof relatedMeetings = [];
+      if (meetingIds.length > 0) {
+        const [{ data: mtgClients }, { data: mtgPeople }] = await Promise.all([
+          supabase.from("meeting_clients").select("meeting_id, client:clients!client_id(full_name)").in("meeting_id", meetingIds),
+          supabase.from("meeting_people").select("meeting_id, person:people!person_id(full_name)").in("meeting_id", meetingIds),
+        ]);
+        const clientsByMeeting: Record<string, string[]> = {};
+        const peopleByMeeting: Record<string, string[]> = {};
+        for (const row of mtgClients || []) {
+          const r = row as unknown as { meeting_id: string; client: { full_name: string } | null };
+          if (r.client) {
+            if (!clientsByMeeting[r.meeting_id]) clientsByMeeting[r.meeting_id] = [];
+            clientsByMeeting[r.meeting_id].push(r.client.full_name);
+          }
+        }
+        for (const row of mtgPeople || []) {
+          const r = row as unknown as { meeting_id: string; person: { full_name: string } | null };
+          if (r.person) {
+            if (!peopleByMeeting[r.meeting_id]) peopleByMeeting[r.meeting_id] = [];
+            peopleByMeeting[r.meeting_id].push(r.person.full_name);
+          }
+        }
+
+        enrichedMeetings = meetingRows.map((m) => ({
+          id: m.meeting!.id,
+          title: m.meeting!.title,
+          meeting_status: m.meeting!.meeting_status,
+          meeting_at: m.meeting!.meeting_at,
+          clients: clientsByMeeting[m.meeting_id] || [],
+          people: peopleByMeeting[m.meeting_id] || [],
+        }));
+      }
+      setRelatedMeetings(enrichedMeetings);
 
       setLoading(false);
     }
@@ -194,10 +317,10 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
 
   const tabs = [
     { id: "info", label: "Info" },
-    { id: "contacts", label: "Contacts" },
-    { id: "clients", label: "Clients" },
-    { id: "submissions", label: "Submissions" },
+    { id: "people", label: "People" },
     { id: "meetings", label: "Meetings" },
+    { id: "submissions", label: "Submissions" },
+    { id: "clients", label: "Clients" },
   ];
 
   if (loading) {
@@ -238,7 +361,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => { setActiveTab(tab.id); setExpandedPerson(null); }}
+            onClick={() => setActiveTab(tab.id)}
             className={`px-3 py-2 text-sm font-medium border-b-2 transition-colors ${
               activeTab === tab.id
                 ? "border-black text-black"
@@ -309,118 +432,218 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
               Add Company
             </button>
           </div>
-          <Field label="People">
-            <MultiRelationPicker
-              value={form.person_ids}
-              onChange={(ids) => {
-                setForm({ ...form, person_ids: ids });
-                setRelatedPeople(people.filter((p) => ids.includes(p.id)));
-              }}
-              options={personOptions}
-              placeholder="Select people..."
-            />
-          </Field>
         </div>
       )}
 
-      {/* Contacts Tab */}
-      {activeTab === "contacts" && (
-        <div className="space-y-2">
+      {/* People Tab */}
+      {activeTab === "people" && (
+        <div>
+          <div className="mb-3">
+            <Field label="People">
+              <MultiRelationPicker
+                value={form.person_ids}
+                onChange={(ids) => {
+                  setForm({ ...form, person_ids: ids });
+                  // Re-enrich would require async; we update what we can
+                  setRelatedPeople((prev) => {
+                    const existing = new Map(prev.map((p) => [p.id, p]));
+                    return ids.map((id) => existing.get(id) || {
+                      id,
+                      full_name: people.find((p) => p.id === id)?.full_name || "Unknown",
+                      title: people.find((p) => p.id === id)?.title || null,
+                      exec_level: people.find((p) => p.id === id)?.exec_level || null,
+                      department: [],
+                      buyer_type: null,
+                      primary_phone: null,
+                      primary_email: null,
+                    });
+                  });
+                }}
+                options={personOptions}
+                placeholder="Add people..."
+              />
+            </Field>
+          </div>
           {relatedPeople.length === 0 ? (
-            <p className="text-sm text-zinc-400 py-8 text-center">No contacts on this project.</p>
+            <p className="text-sm text-zinc-400 py-8 text-center">No people on this project.</p>
           ) : (
-            relatedPeople.map((person) => (
-              <div key={person.id} className="rounded-md border border-zinc-200 overflow-hidden">
-                <button
-                  onClick={() => setExpandedPerson(expandedPerson === person.id ? null : person.id)}
-                  className="flex w-full items-center justify-between px-3 py-2.5 text-left hover:bg-zinc-50 transition-colors"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-black">{person.full_name}</p>
-                    {person.title && (
-                      <p className="text-xs text-zinc-500">{person.title}</p>
-                    )}
-                  </div>
-                  {person.exec_level && (
-                    <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
-                      {person.exec_level.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
-                    </span>
-                  )}
-                </button>
-                {expandedPerson === person.id && (
-                  <div className="border-t border-zinc-100 bg-zinc-50/50 px-3 py-3">
-                    <Link
-                      href={`/contacts/${person.id}`}
-                      className="text-xs text-zinc-500 hover:text-black transition-colors"
+            <div className="overflow-x-auto rounded-lg border border-zinc-200">
+              <table className="w-full min-w-[700px] text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-200 bg-zinc-50/50">
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Name</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Title</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Level</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Department</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Buyer Type</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Phone</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Email</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {relatedPeople.map((person) => (
+                    <tr
+                      key={person.id}
+                      className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/50 transition-colors"
                     >
-                      View full contact record →
-                    </Link>
-                  </div>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* Clients Tab */}
-      {activeTab === "clients" && (
-        <div className="space-y-2">
-          {relatedClients.length === 0 ? (
-            <p className="text-sm text-zinc-400 py-8 text-center">No clients on this project.</p>
-          ) : (
-            relatedClients.map((c) => (
-              <div key={c.id} className="flex items-center justify-between rounded-md border border-zinc-200 px-4 py-3">
-                <p className="text-sm font-medium text-black">{c.full_name}</p>
-                {c.level && <span className="text-xs text-zinc-500">{c.level}</span>}
-              </div>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* Submissions Tab */}
-      {activeTab === "submissions" && (
-        <div className="space-y-2">
-          {relatedSubmissions.length === 0 ? (
-            <p className="text-sm text-zinc-400 py-8 text-center">No submissions for this project.</p>
-          ) : (
-            relatedSubmissions.map((s) => (
-              <Link
-                key={s.id}
-                href={`/submissions/${s.id}`}
-                className="flex items-center justify-between rounded-md border border-zinc-200 px-4 py-3 hover:bg-zinc-50 transition-colors"
-              >
-                <p className="text-sm font-medium text-black">{s.description}</p>
-                <StatusBadge status={s.status} />
-              </Link>
-            ))
+                      <td className="px-3 py-2.5 font-medium whitespace-nowrap">
+                        <Link href={`/contacts/${person.id}`} className="text-black hover:underline">
+                          {person.full_name}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2.5 text-zinc-500 whitespace-nowrap">{person.title || "\u2014"}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {person.exec_level ? (
+                          <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                            {person.exec_level.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                          </span>
+                        ) : "\u2014"}
+                      </td>
+                      <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
+                        {person.department && person.department.length > 0 ? person.department.join(", ") : "\u2014"}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {person.buyer_type ? (
+                          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                            {person.buyer_type}
+                          </span>
+                        ) : "\u2014"}
+                      </td>
+                      <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
+                        {person.primary_phone ? formatPhone(person.primary_phone) : "\u2014"}
+                      </td>
+                      <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
+                        {person.primary_email || "\u2014"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
 
       {/* Meetings Tab */}
       {activeTab === "meetings" && (
-        <div className="space-y-2">
+        <div>
           {relatedMeetings.length === 0 ? (
             <p className="text-sm text-zinc-400 py-8 text-center">No meetings for this project.</p>
           ) : (
-            relatedMeetings.map((m) => (
-              <Link
-                key={m.id}
-                href={`/meetings?open=${m.id}`}
-                className="flex items-center justify-between rounded-md border border-zinc-200 px-4 py-3 hover:bg-zinc-50 transition-colors"
-              >
-                <div>
-                  <p className="text-sm font-medium text-black">{m.title}</p>
-                  <p className="text-xs text-zinc-500">{m.meeting_at ? new Date(m.meeting_at).toLocaleDateString() : "No date"}</p>
-                </div>
-                <StatusBadge status={m.meeting_status} />
-              </Link>
-            ))
+            <div className="overflow-x-auto rounded-lg border border-zinc-200">
+              <table className="w-full min-w-[600px] text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-200 bg-zinc-50/50">
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Clients</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">People</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Date</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {relatedMeetings.map((m) => (
+                    <tr key={m.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-3 py-2.5 text-xs text-zinc-700">{m.clients.length > 0 ? m.clients.join(", ") : "\u2014"}</td>
+                      <td className="px-3 py-2.5 text-xs text-zinc-700">{m.people.length > 0 ? m.people.join(", ") : "\u2014"}</td>
+                      <td className="px-3 py-2.5 text-xs text-zinc-500 whitespace-nowrap">
+                        {m.meeting_at ? new Date(m.meeting_at).toLocaleDateString() : "No date"}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <Link href={`/meetings?open=${m.id}`} className="text-zinc-400 hover:text-black transition-colors">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
+
+      {/* Submissions Tab */}
+      {activeTab === "submissions" && (
+        <div>
+          {relatedSubmissions.length === 0 ? (
+            <p className="text-sm text-zinc-400 py-8 text-center">No submissions for this project.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-zinc-200">
+              <table className="w-full min-w-[600px] text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-200 bg-zinc-50/50">
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Client</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Material</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Person</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Response</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {relatedSubmissions.map((s) => (
+                    <tr key={s.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-3 py-2.5 text-xs text-zinc-700">{s.client_name || "\u2014"}</td>
+                      <td className="px-3 py-2.5 text-xs text-zinc-700">{s.material_title || "\u2014"}</td>
+                      <td className="px-3 py-2.5 text-xs whitespace-nowrap">
+                        {s.person_id ? (
+                          <Link href={`/contacts/${s.person_id}`} className="text-zinc-700 hover:text-black hover:underline">
+                            {s.person_name}
+                          </Link>
+                        ) : "\u2014"}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <StatusBadge status={s.status} />
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <Link href={`/submissions/${s.id}`} className="text-zinc-400 hover:text-black transition-colors">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Clients Tab */}
+      {activeTab === "clients" && (
+        <div>
+          {relatedClients.length === 0 ? (
+            <p className="text-sm text-zinc-400 py-8 text-center">No clients on this project.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-zinc-200">
+              <table className="w-full min-w-[500px] text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-200 bg-zinc-50/50">
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Client</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Staff Level</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Status</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Start Year</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">End Year</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {relatedClients.map((c) => (
+                    <tr key={c.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-3 py-2.5 font-medium text-black whitespace-nowrap">{c.full_name}</td>
+                      <td className="px-3 py-2.5 text-xs text-zinc-500">{c.level || "\u2014"}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {c.status ? <StatusBadge status={c.status} /> : "\u2014"}
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-zinc-500">{c.start_year || "\u2014"}</td>
+                      <td className="px-3 py-2.5 text-xs text-zinc-500">{c.end_year || "\u2014"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Danger Zone */}
       <div className="mt-12 border-t border-zinc-200 pt-6">
         <p className="text-xs text-zinc-400 mb-3">Danger Zone</p>

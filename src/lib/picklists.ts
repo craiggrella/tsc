@@ -64,4 +64,6 @@ export const PICKLIST_TABLES = [
   { table: "list_formats", label: "Formats" },
   { table: "list_genres", label: "Genres" },
   { table: "list_sub_genres", label: "Sub-Genres" },
+  { table: "list_location_types", label: "Location Types" },
+  { table: "list_credit_statuses", label: "Credit Statuses" },
 ];

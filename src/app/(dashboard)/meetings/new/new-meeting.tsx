@@ -10,6 +10,7 @@ import {
   type RelationOption,
 } from "@/components/shared/relation-picker";
 import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
+import { usePicklist, toSelectOptions } from "@/lib/picklists";
 import type { MeetingStatus } from "@/types/database";
 
 const MEETING_STATUSES: { value: MeetingStatus; label: string }[] = [
@@ -25,6 +26,9 @@ const emptyForm = {
   meeting_status: "need_to_set" as MeetingStatus,
   meeting_at: null as string | null,
   location_link: null as string | null,
+  location_type: null as string | null,
+  virtual_info: null as string | null,
+  meeting_address: null as string | null,
   notes: null as string | null,
   client_ids: [] as string[],
   person_ids: [] as string[],
@@ -46,6 +50,7 @@ export function NewMeeting({ userId }: NewMeetingProps) {
   const [people, setPeople] = useState<{ id: string; full_name: string }[]>([]);
   const [projectList, setProjectList] = useState<{ id: string; name: string }[]>([]);
   const [profiles, setProfiles] = useState<{ id: string; full_name: string; role: string }[]>([]);
+  const locationTypes = usePicklist("list_location_types");
 
   useEffect(() => {
     Promise.all([
@@ -102,6 +107,9 @@ export function NewMeeting({ userId }: NewMeetingProps) {
         meeting_status: form.meeting_status,
         meeting_at: form.meeting_at || null,
         location_link: form.location_link || null,
+        location_type: form.location_type || null,
+        virtual_info: form.virtual_info || null,
+        meeting_address: form.meeting_address || null,
         notes: form.notes || null,
       };
 
@@ -224,6 +232,32 @@ export function NewMeeting({ userId }: NewMeetingProps) {
             />
           </Field>
         </div>
+        <Field label="Location Type">
+          <Select
+            value={form.location_type || ""}
+            onChange={(e) => setForm({ ...form, location_type: e.target.value || null })}
+            options={toSelectOptions(locationTypes)}
+            placeholder="Select..."
+          />
+        </Field>
+        {(form.location_type === "virtual" || form.location_type === "hybrid") && (
+          <Field label="Virtual Meeting Info">
+            <Textarea
+              value={form.virtual_info || ""}
+              onChange={(e) => setForm({ ...form, virtual_info: e.target.value || null })}
+              placeholder="Zoom link, phone conference number, etc."
+            />
+          </Field>
+        )}
+        {(form.location_type === "in_person" || form.location_type === "hybrid") && (
+          <Field label="Meeting Address">
+            <Textarea
+              value={form.meeting_address || ""}
+              onChange={(e) => setForm({ ...form, meeting_address: e.target.value || null })}
+              placeholder="Office address, room number, etc."
+            />
+          </Field>
+        )}
         <Field label="Notes">
           <Textarea
             value={form.notes || ""}

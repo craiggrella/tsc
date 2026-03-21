@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Loader2, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { formatPhone } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
   RelationPicker,
@@ -102,6 +103,30 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
   const [gridMaterials, setGridMaterials] = useState<{ id: string; title: string; client_name: string | null; response: string | null }[]>([]);
   const [gridLoading, setGridLoading] = useState(false);
   const [gridLoaded, setGridLoaded] = useState(false);
+  const [assistantInfo, setAssistantInfo] = useState<{ phone: string | null; email: string | null } | null>(null);
+
+  const loadAssistantInfo = useCallback(async (assistantId: string) => {
+    const [{ data: phoneData }, { data: emailData }] = await Promise.all([
+      supabase
+        .from("contact_phones")
+        .select("number")
+        .eq("entity_type", "person")
+        .eq("entity_id", assistantId)
+        .eq("is_primary", true)
+        .limit(1),
+      supabase
+        .from("contact_emails")
+        .select("address")
+        .eq("entity_type", "person")
+        .eq("entity_id", assistantId)
+        .eq("is_primary", true)
+        .limit(1),
+    ]);
+    setAssistantInfo({
+      phone: phoneData?.[0]?.number || null,
+      email: emailData?.[0]?.address || null,
+    });
+  }, [supabase]);
 
   useEffect(() => {
     async function load() {
@@ -248,6 +273,11 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
         }
       } else {
         setRelatedMaterials([]);
+      }
+
+      // Load assistant info if set
+      if (contact.assistant_id) {
+        loadAssistantInfo(contact.assistant_id);
       }
 
       setLoading(false);
@@ -561,10 +591,29 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
           <Field label="Assistant">
             <RelationPicker
               value={form.assistant_id}
-              onChange={(id) => setForm({ ...form, assistant_id: id })}
+              onChange={(id) => {
+                setForm({ ...form, assistant_id: id });
+                setAssistantInfo(null);
+                if (id) {
+                  loadAssistantInfo(id);
+                }
+              }}
               options={assistantOptions}
               placeholder="Select assistant..."
             />
+            {form.assistant_id && assistantInfo && (
+              <div className="mt-1.5 ml-0.5 space-y-0.5">
+                {assistantInfo.phone && (
+                  <p className="text-xs text-zinc-500">{formatPhone(assistantInfo.phone)}</p>
+                )}
+                {assistantInfo.email && (
+                  <p className="text-xs text-zinc-500">{assistantInfo.email}</p>
+                )}
+                {!assistantInfo.phone && !assistantInfo.email && (
+                  <p className="text-xs text-zinc-400">No primary contact info</p>
+                )}
+              </div>
+            )}
           </Field>
 
           <Field label="Notes">

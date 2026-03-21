@@ -7,7 +7,6 @@ import { ArrowLeft, Loader2, Eye, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
-  RelationPicker,
   MultiRelationPicker,
   type RelationOption,
 } from "@/components/shared/relation-picker";
@@ -27,7 +26,7 @@ const RESPONSE_COLORS: Record<string, string> = {
 const emptyForm = {
   title: "",
   is_client_material: false,
-  client_id: null as string | null,
+  client_ids: [] as string[],
   direction: "Outgoing" as "Outgoing" | "Incoming",
   material_type: "Script" as string,
   format: null as string | null,
@@ -86,13 +85,14 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
 
   useEffect(() => {
     async function load() {
-      const [{ data: material }, { data: clientsData }] = await Promise.all([
+      const [{ data: material }, { data: clientsData }, { data: matClients }] = await Promise.all([
         supabase
           .from("client_materials")
-          .select("*, client:clients!client_id(id, full_name)")
+          .select("*")
           .eq("id", materialId)
           .single(),
         supabase.from("clients").select("id, full_name").order("full_name"),
+        supabase.from("material_clients").select("client_id").eq("material_id", materialId),
       ]);
 
       if (!material) {
@@ -100,10 +100,12 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
         return;
       }
 
+      const clientIds = (matClients || []).map((mc) => mc.client_id);
+
       setForm({
         title: material.title,
         is_client_material: material.is_client_material,
-        client_id: material.client_id,
+        client_ids: clientIds,
         direction: material.direction,
         material_type: material.material_type,
         format: material.format,
@@ -240,7 +242,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
       const payload = {
         title: form.title,
         is_client_material: form.is_client_material,
-        client_id: form.is_client_material ? form.client_id : null,
+        client_id: form.is_client_material && form.client_ids.length > 0 ? form.client_ids[0] : null,
         direction: form.direction,
         material_type: form.material_type,
         format: form.format || null,
@@ -255,6 +257,14 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
       };
 
       await supabase.from("client_materials").update(payload).eq("id", materialId);
+
+      // Sync material_clients junction table
+      await supabase.from("material_clients").delete().eq("material_id", materialId);
+      if (form.is_client_material && form.client_ids.length > 0) {
+        await supabase.from("material_clients").insert(
+          form.client_ids.map((cid) => ({ material_id: materialId, client_id: cid }))
+        );
+      }
 
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
@@ -326,7 +336,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
                 setForm({
                   ...form,
                   is_client_material: e.target.checked,
-                  client_id: e.target.checked ? form.client_id : null,
+                  client_ids: e.target.checked ? form.client_ids : [],
                 })
               }
               className="accent-black"
@@ -336,12 +346,12 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
         </Field>
 
         {form.is_client_material && (
-          <Field label="Client">
-            <RelationPicker
-              value={form.client_id}
-              onChange={(id) => setForm({ ...form, client_id: id })}
+          <Field label="Clients">
+            <MultiRelationPicker
+              value={form.client_ids}
+              onChange={(ids) => setForm({ ...form, client_ids: ids })}
               options={clientOptions}
-              placeholder="Select client..."
+              placeholder="Select clients..."
             />
           </Field>
         )}
