@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Field, Input, Textarea } from "@/components/shared/detail-panel";
+import { MultiRelationPicker, type RelationOption } from "@/components/shared/relation-picker";
 import { formatPhone } from "@/lib/utils";
 import type { CompanyType, CompanyOutlet } from "@/types/database";
 
@@ -101,7 +102,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
       ]);
 
       if (!company) {
-        router.replace("/contacts");
+        router.replace("/companies");
         return;
       }
 
@@ -135,7 +136,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
     setDeleting(true);
     try {
       await supabase.from("companies").delete().eq("id", companyId);
-      router.push("/contacts");
+      router.push("/companies");
     } finally {
       setDeleting(false);
     }
@@ -162,11 +163,11 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
     <div className="mx-auto max-w-4xl">
       {/* Back link */}
       <Link
-        href="/contacts"
+        href="/companies"
         className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-black transition-colors mb-4"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
-        Contacts
+        Companies
       </Link>
 
       {/* Header */}
@@ -193,62 +194,32 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
           />
         </Field>
 
-        <Field label="Types">
-          <div className="flex flex-wrap gap-1.5">
-            {COMPANY_TYPES.map((ct) => (
-              <button
-                key={ct.value}
-                type="button"
-                onClick={() => toggleArrayField("types", ct.value)}
-                className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                  form.types.includes(ct.value)
-                    ? "border-blue-300 bg-blue-50 text-blue-700"
-                    : "border-zinc-200 text-zinc-500 hover:border-zinc-300"
-                }`}
-              >
-                {ct.label}
-              </button>
-            ))}
-          </div>
-        </Field>
-
-        <Field label="Outlet">
-          <div className="flex flex-wrap gap-1.5">
-            {COMPANY_OUTLETS.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                onClick={() => toggleArrayField("outlet", o.value)}
-                className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                  form.outlet.includes(o.value)
-                    ? "border-amber-300 bg-amber-50 text-amber-700"
-                    : "border-zinc-200 text-zinc-500 hover:border-zinc-300"
-                }`}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
-        </Field>
-
-        <Field label="Departments">
-          <div className="flex flex-wrap gap-1.5">
-            {DEPARTMENTS.map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => toggleArrayField("department", d)}
-                className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors ${
-                  form.department.includes(d)
-                    ? "border-purple-300 bg-purple-50 text-purple-700"
-                    : "border-zinc-200 text-zinc-500 hover:border-zinc-300"
-                }`}
-              >
-                {d}
-              </button>
-            ))}
-          </div>
-        </Field>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Types">
+            <MultiRelationPicker
+              value={form.types}
+              onChange={(ids) => setForm({ ...form, types: ids })}
+              options={COMPANY_TYPES.map((ct) => ({ id: ct.value, label: ct.label }))}
+              placeholder="Select types..."
+            />
+          </Field>
+          <Field label="Outlet">
+            <MultiRelationPicker
+              value={form.outlet}
+              onChange={(ids) => setForm({ ...form, outlet: ids })}
+              options={COMPANY_OUTLETS.map((o) => ({ id: o.value, label: o.label }))}
+              placeholder="Select outlets..."
+            />
+          </Field>
+          <Field label="Departments">
+            <MultiRelationPicker
+              value={form.department}
+              onChange={(ids) => setForm({ ...form, department: ids })}
+              options={DEPARTMENTS.map((d) => ({ id: d, label: d }))}
+              placeholder="Select departments..."
+            />
+          </Field>
+        </div>
 
         <Field label="Phone">
           <Input
