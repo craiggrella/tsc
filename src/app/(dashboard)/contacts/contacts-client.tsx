@@ -131,6 +131,7 @@ export function ContactsClient({ userId }: ContactsClientProps) {
   const [buyerTypeFilter, setBuyerTypeFilter] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<string[]>([]);
   const [levelFilter, setLevelFilter] = useState<string[]>([]);
+  const [hasBuyerType, setHasBuyerType] = useState(false);
 
   // Table display: primary/first phone and email per contact
   const [tablePhones, setTablePhones] = useState<Record<string, string>>({});
@@ -141,9 +142,11 @@ export function ContactsClient({ userId }: ContactsClientProps) {
     const bt = searchParams.get("buyer_type");
     const ct = searchParams.get("type");
     const lv = searchParams.get("level");
+    const hbt = searchParams.get("has_buyer_type");
     if (bt) setBuyerTypeFilter(bt.split(","));
     if (ct) setTypeFilter(ct.split(","));
     if (lv) setLevelFilter(lv.split(","));
+    if (hbt === "true") setHasBuyerType(true);
   }, []);
 
   // Build and execute query with filters
@@ -152,6 +155,7 @@ export function ContactsClient({ userId }: ContactsClientProps) {
       .from("people")
       .select("*, company:companies!company_id(id, name)", { count: "exact" });
 
+    if (hasBuyerType) query = query.not("buyer_type", "is", null);
     if (buyerTypeFilter.length > 0) query = query.in("buyer_type", buyerTypeFilter);
     if (typeFilter.length > 0) query = query.in("type", typeFilter);
     if (levelFilter.length > 0) query = query.in("exec_level", levelFilter);
@@ -222,7 +226,7 @@ export function ContactsClient({ userId }: ContactsClientProps) {
       return;
     }
     fetchContacts(search);
-  }, [buyerTypeFilter, typeFilter, levelFilter]);
+  }, [buyerTypeFilter, typeFilter, levelFilter, hasBuyerType]);
 
   // Fetch primary/first phone and email for contacts in the table
   useEffect(() => {
@@ -268,7 +272,7 @@ export function ContactsClient({ userId }: ContactsClientProps) {
     }, 250);
   }
 
-  const activeFilterCount = buyerTypeFilter.length + typeFilter.length + levelFilter.length;
+  const activeFilterCount = buyerTypeFilter.length + typeFilter.length + levelFilter.length + (hasBuyerType ? 1 : 0);
 
   if (loading) return <div className="flex items-center justify-center py-20"><p className="text-sm text-zinc-400">Loading...</p></div>;
 
@@ -314,7 +318,7 @@ export function ContactsClient({ userId }: ContactsClientProps) {
         <MultiFilterDropdown label="Level" options={EXEC_LEVELS} selected={levelFilter} onChange={setLevelFilter} />
         {activeFilterCount > 0 && (
           <button
-            onClick={() => { setBuyerTypeFilter([]); setTypeFilter([]); setLevelFilter([]); }}
+            onClick={() => { setBuyerTypeFilter([]); setTypeFilter([]); setLevelFilter([]); setHasBuyerType(false); }}
             className="text-[11px] text-zinc-400 hover:text-black"
           >
             Clear
