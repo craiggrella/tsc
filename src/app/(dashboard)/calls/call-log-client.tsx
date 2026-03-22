@@ -159,6 +159,8 @@ export function CallLogClient({ userId }: CallLogClientProps) {
   // Table display: primary phone + email per contact
   const [tablePhones, setTablePhones] = useState<Record<string, string>>({});
   const [tableEmails, setTableEmails] = useState<Record<string, string>>({});
+  // Preferred phone lookup: phone record UUID → phone number
+  const [preferredPhoneNumbers, setPreferredPhoneNumbers] = useState<Record<string, string>>({});
 
   // Filters — default to "open" (everything except completed) + current user
   const [statusFilter, setStatusFilter] = useState<CallStatus | "open" | "">("open");
@@ -218,6 +220,23 @@ export function CallLogClient({ userId }: CallLogClientProps) {
       }
       setTableEmails(emailMap);
     });
+
+    // Fetch preferred phone numbers (stored as phone record UUIDs in calls.preferred_phone)
+    const prefPhoneIds = calls
+      .map((c) => c.preferred_phone)
+      .filter((pp): pp is string => !!pp && pp !== "custom" && pp.length > 10);
+    if (prefPhoneIds.length > 0) {
+      const uniqueIds = [...new Set(prefPhoneIds)];
+      supabase
+        .from("contact_phones")
+        .select("id, number")
+        .in("id", uniqueIds)
+        .then(({ data }) => {
+          const map: Record<string, string> = {};
+          for (const p of data || []) map[p.id] = p.number;
+          setPreferredPhoneNumbers(map);
+        });
+    }
   }, [calls, supabase]);
 
   // Auto-open new call or specific call from URL params
@@ -423,8 +442,8 @@ export function CallLogClient({ userId }: CallLogClientProps) {
         const bVal = b.priority ? order[b.priority] : 3;
         cmp = aVal - bVal;
       } else if (sortField === "due_date" || sortField === "log_time") {
-        const aVal = a[sortField] || "";
-        const bVal = b[sortField] || "";
+        const aVal = sortField === "log_time" ? (a.updated_at || "") : (a[sortField] || "");
+        const bVal = sortField === "log_time" ? (b.updated_at || "") : (b[sortField] || "");
         cmp = aVal.localeCompare(bVal);
       } else {
         cmp = (a.call_status || "").localeCompare(b.call_status || "");
@@ -638,8 +657,13 @@ export function CallLogClient({ userId }: CallLogClientProps) {
   // ─── Phone display helper ───────────────────────
 
   function getPhoneDisplay(call: CallRow): string {
+    // 1. If a preferred phone was selected (UUID), show that number
+    if (call.preferred_phone && call.preferred_phone !== "custom" && preferredPhoneNumbers[call.preferred_phone]) {
+      return formatPhone(preferredPhoneNumbers[call.preferred_phone]);
+    }
+    // 2. If custom phone entered, show that
     if (call.phone_custom) return formatPhone(call.phone_custom);
-    // Show primary phone from contact record
+    // 3. Fall back to contact's starred/first phone
     if (call.contact_id && tablePhones[call.contact_id]) return formatPhone(tablePhones[call.contact_id]);
     return "—";
   }
@@ -825,7 +849,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                   onClick={() => toggleSort("log_time")}
                   className="inline-flex items-center gap-1 hover:text-black transition-colors"
                 >
-                  Log Time
+                  Last Updated
                   <ArrowUpDown className="h-3 w-3" />
                 </button>
               </th>
@@ -890,8 +914,8 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                       : "—"}
                   </td>
                   <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
-                    {call.log_time
-                      ? new Date(call.log_time).toLocaleString([], {
+                    {call.updated_at
+                      ? new Date(call.updated_at).toLocaleString([], {
                           month: "short",
                           day: "numeric",
                           hour: "numeric",
