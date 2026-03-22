@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, ExternalLink } from "lucide-react";
+import { Loader2, ExternalLink } from "lucide-react";
+import { Breadcrumb, buildFromParams } from "@/components/shared/breadcrumb";
 import { createClient } from "@/lib/supabase/client";
 import { Field, Input, Textarea } from "@/components/shared/detail-panel";
 import { MultiRelationPicker, type RelationOption } from "@/components/shared/relation-picker";
@@ -276,14 +277,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
 
   return (
     <div className="mx-auto max-w-4xl">
-      {/* Back link */}
-      <Link
-        href="/companies"
-        className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-black transition-colors mb-4"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Companies
-      </Link>
+      <Breadcrumb fallbackHref="/companies" fallbackLabel="Companies" currentLabel={form.name || "Untitled"} />
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -402,7 +396,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
                     >
                       <td className="px-3 py-2.5 font-medium whitespace-nowrap">
                         <Link
-                          href={`/contacts/${person.id}`}
+                          href={`/contacts/${person.id}?${buildFromParams(`/companies/${companyId}`, form.name)}`}
                           className="text-black hover:underline"
                         >
                           {person.full_name}
@@ -476,7 +470,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
                     >
                       <td className="px-3 py-2.5 font-medium whitespace-nowrap">
                         <Link
-                          href={`/projects/${proj.id}`}
+                          href={`/projects/${proj.id}?${buildFromParams(`/companies/${companyId}`, form.name)}`}
                           className="text-black hover:underline"
                         >
                           {proj.name}

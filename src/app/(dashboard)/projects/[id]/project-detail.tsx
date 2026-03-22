@@ -3,7 +3,8 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Plus, X, ExternalLink } from "lucide-react";
+import { Loader2, Plus, X, ExternalLink } from "lucide-react";
+import { Breadcrumb, buildFromParams } from "@/components/shared/breadcrumb";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -325,14 +326,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
 
   return (
     <div className="mx-auto max-w-4xl">
-      {/* Back link */}
-      <Link
-        href="/projects"
-        className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-black transition-colors mb-4"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Projects
-      </Link>
+      <Breadcrumb fallbackHref="/projects" fallbackLabel="Projects" currentLabel={form.name || "Untitled"} />
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -479,7 +473,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
                       className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/50 transition-colors"
                     >
                       <td className="px-3 py-2.5 font-medium whitespace-nowrap">
-                        <Link href={`/contacts/${person.id}`} className="text-black hover:underline">
+                        <Link href={`/contacts/${person.id}?${buildFromParams(`/projects/${projectId}`, form.name)}`} className="text-black hover:underline">
                           {person.full_name}
                         </Link>
                       </td>
@@ -541,7 +535,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
                         {m.meeting_at ? new Date(m.meeting_at).toLocaleDateString() : "No date"}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
-                        <Link href={`/meetings?open=${m.id}`} className="text-zinc-400 hover:text-black transition-colors">
+                        <Link href={`/meetings/${m.id}?${buildFromParams(`/projects/${projectId}`, form.name)}`} className="text-zinc-400 hover:text-black transition-colors">
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Link>
                       </td>
@@ -578,7 +572,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
                       <td className="px-3 py-2.5 text-xs text-zinc-700">{s.material_title || "\u2014"}</td>
                       <td className="px-3 py-2.5 text-xs whitespace-nowrap">
                         {s.person_id ? (
-                          <Link href={`/contacts/${s.person_id}`} className="text-zinc-700 hover:text-black hover:underline">
+                          <Link href={`/contacts/${s.person_id}?${buildFromParams(`/projects/${projectId}`, form.name)}`} className="text-zinc-700 hover:text-black hover:underline">
                             {s.person_name}
                           </Link>
                         ) : "\u2014"}
@@ -599,7 +593,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
                         )}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
-                        <Link href={`/submissions/${s.id}`} className="text-zinc-400 hover:text-black transition-colors">
+                        <Link href={`/submissions/${s.id}?${buildFromParams(`/projects/${projectId}`, form.name)}`} className="text-zinc-400 hover:text-black transition-colors">
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Link>
                       </td>

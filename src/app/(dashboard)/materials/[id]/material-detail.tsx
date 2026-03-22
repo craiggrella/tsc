@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Eye, ExternalLink } from "lucide-react";
+import { Loader2, Eye, ExternalLink } from "lucide-react";
+import { Breadcrumb, buildFromParams } from "@/components/shared/breadcrumb";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -243,14 +244,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
 
   return (
     <div className="mx-auto max-w-4xl">
-      {/* Back link */}
-      <Link
-        href="/materials"
-        className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-black transition-colors mb-4"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Materials
-      </Link>
+      <Breadcrumb fallbackHref="/materials" fallbackLabel="Client Material" currentLabel={form.title || "Untitled"} />
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -440,7 +434,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
                       <div className="flex items-center gap-1.5">
                         {r.submission_id && (
                           <Link
-                            href={`/submissions/${r.submission_id}`}
+                            href={`/submissions/${r.submission_id}?${buildFromParams(`/materials/${materialId}`, form.title)}`}
                             className="text-zinc-400 hover:text-black transition-colors"
                             title="View submission"
                           >
@@ -448,7 +442,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
                           </Link>
                         )}
                         <Link
-                          href={`/contacts/${r.person_id}`}
+                          href={`/contacts/${r.person_id}?${buildFromParams(`/materials/${materialId}`, form.title)}`}
                           className="text-zinc-700 hover:text-black hover:underline"
                         >
                           {r.full_name}

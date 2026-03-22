@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Send } from "lucide-react";
+import { Loader2, Send } from "lucide-react";
+import { Breadcrumb } from "@/components/shared/breadcrumb";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -266,14 +267,7 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
 
   return (
     <div className="mx-auto max-w-4xl">
-      {/* Back link */}
-      <Link
-        href="/meetings"
-        className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-black transition-colors mb-4"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Meetings
-      </Link>
+      <Breadcrumb fallbackHref="/meetings" fallbackLabel="Meetings" currentLabel={form.title || "Untitled"} />
 
       {/* Linked Submission Context */}
       {linkedSubmission && (

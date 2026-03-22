@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { Loader2, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { Breadcrumb, buildFromParams } from "@/components/shared/breadcrumb";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -613,14 +614,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
 
   return (
     <div className="mx-auto max-w-4xl">
-      {/* Back link */}
-      <Link
-        href="/clients"
-        className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-black transition-colors mb-4"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Clients
-      </Link>
+      <Breadcrumb fallbackHref="/clients" fallbackLabel="Clients" currentLabel={form.full_name || "Untitled"} />
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
@@ -860,7 +854,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                     <tr key={`${row.meeting_id}-${i}`} className="border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50/50 transition-colors">
                       <td className="px-3 py-2.5">
                         {row.person_id ? (
-                          <Link href={`/contacts/${row.person_id}`} className="font-medium text-black hover:underline">
+                          <Link href={`/contacts/${row.person_id}?${buildFromParams(`/clients/${clientId}`, form.full_name)}`} className="font-medium text-black hover:underline">
                             {row.person_name}
                           </Link>
                         ) : (
@@ -872,7 +866,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                       </td>
                       <td className="px-3 py-2.5 text-zinc-600">{row.project_name || "\u2014"}</td>
                       <td className="px-3 py-2.5 text-center">
-                        <Link href={`/meetings/${row.meeting_id}`} className="inline-flex text-zinc-400 hover:text-black transition-colors">
+                        <Link href={`/meetings/${row.meeting_id}?${buildFromParams(`/clients/${clientId}`, form.full_name)}`} className="inline-flex text-zinc-400 hover:text-black transition-colors">
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Link>
                       </td>
@@ -911,7 +905,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                     <tr key={`${row.submission_id}-${i}`} className="border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50/50 transition-colors">
                       <td className="px-3 py-2.5">
                         {row.person_id ? (
-                          <Link href={`/contacts/${row.person_id}`} className="font-medium text-black hover:underline">
+                          <Link href={`/contacts/${row.person_id}?${buildFromParams(`/clients/${clientId}`, form.full_name)}`} className="font-medium text-black hover:underline">
                             {row.person_name}
                           </Link>
                         ) : (
@@ -935,7 +929,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-center">
-                        <Link href={`/submissions/${row.submission_id}`} className="inline-flex text-zinc-400 hover:text-black transition-colors">
+                        <Link href={`/submissions/${row.submission_id}?${buildFromParams(`/clients/${clientId}`, form.full_name)}`} className="inline-flex text-zinc-400 hover:text-black transition-colors">
                           <ExternalLink className="h-3.5 w-3.5" />
                         </Link>
                       </td>

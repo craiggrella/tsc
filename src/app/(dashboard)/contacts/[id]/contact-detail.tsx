@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, ExternalLink } from "lucide-react";
+import { Loader2, ExternalLink } from "lucide-react";
+import { Breadcrumb } from "@/components/shared/breadcrumb";
 import { createClient } from "@/lib/supabase/client";
 import { formatPhone } from "@/lib/utils";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -428,14 +429,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
 
   return (
     <div className="mx-auto max-w-4xl">
-      {/* Back link */}
-      <Link
-        href="/contacts"
-        className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-black transition-colors mb-4"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Contacts
-      </Link>
+      <Breadcrumb fallbackHref="/contacts" fallbackLabel="Contacts" currentLabel={form.full_name || "Untitled"} />
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">

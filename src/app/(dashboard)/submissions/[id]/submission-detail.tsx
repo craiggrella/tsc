@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Plus, X } from "lucide-react";
+import { Loader2, Plus, X } from "lucide-react";
+import { Breadcrumb } from "@/components/shared/breadcrumb";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
@@ -358,13 +359,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
     <div className="mx-auto max-w-5xl">
       {/* Back + Save */}
       <div className="flex items-center justify-between mb-6">
-        <Link
-          href="/submissions"
-          className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-black transition-colors"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Submissions
-        </Link>
+        <Breadcrumb fallbackHref="/submissions" fallbackLabel="Submissions" currentLabel="Submission" />
         <button
           onClick={handleSave}
           disabled={saving}
