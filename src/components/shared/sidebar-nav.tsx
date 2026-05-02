@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -60,13 +59,10 @@ export function SidebarNav({ open, onClose }: SidebarNavProps) {
         {/* Logo */}
         <div className="flex h-28 items-center justify-between border-b border-zinc-200 px-4">
           <Link href="/dashboard" className="flex items-center">
-            <Image
-              src="/images/The Shuman Company Logo.jpeg"
+            <img
+              src="/images/shuman-logo.svg"
               alt="The Shuman Company"
-              width={400}
-              height={120}
               className="h-24 w-auto"
-              priority
             />
           </Link>
           <button onClick={onClose} className="lg:hidden text-zinc-400 hover:text-zinc-600">

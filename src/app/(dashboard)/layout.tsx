@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import Image from "next/image";
 import { Menu, Phone } from "lucide-react";
 import { SidebarNav } from "@/components/shared/sidebar-nav";
 import { OmniSearch } from "@/components/shared/omni-search";
@@ -50,11 +49,9 @@ export default function DashboardLayout({
           >
             <Menu className="h-5 w-5" />
           </button>
-          <Image
-            src="/images/The Shuman Company Logo.jpeg"
+          <img
+            src="/images/shuman-logo.svg"
             alt="The Shuman Company"
-            width={400}
-            height={120}
             className="ml-3 h-24 w-auto"
           />
         </header>

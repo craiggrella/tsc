@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" preserveAspectRatio="xMidYMid meet">
+  <defs>
+    <linearGradient id="silverS" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a1a"></stop>
+      <stop offset="8%" stop-color="#3a3a3a"></stop>
+      <stop offset="20%" stop-color="#7a7a7a"></stop>
+      <stop offset="32%" stop-color="#c8c8c8"></stop>
+      <stop offset="45%" stop-color="#f0f0f0"></stop>
+      <stop offset="50%" stop-color="#fafafa"></stop>
+      <stop offset="55%" stop-color="#f0f0f0"></stop>
+      <stop offset="68%" stop-color="#c8c8c8"></stop>
+      <stop offset="80%" stop-color="#7a7a7a"></stop>
+      <stop offset="92%" stop-color="#3a3a3a"></stop>
+      <stop offset="100%" stop-color="#1a1a1a"></stop>
+    </linearGradient>
+  </defs>
+
+  
+  <text x="400" y="643" text-anchor="middle" font-family="&#39;Times New Roman&#39;, &#39;Times&#39;, serif" font-weight="400" font-size="720" fill="url(#silverS)">S</text>
+
+  
+  <rect x="60" y="360" width="680" height="5" fill="#111111"></rect>
+  <rect x="60" y="440" width="680" height="5" fill="#111111"></rect>
+
+  
+  <text x="400" y="415" text-anchor="middle" font-family="&#39;Times New Roman&#39;, &#39;Times&#39;, serif" font-weight="700" font-size="46" letter-spacing="1" textLength="600" lengthAdjust="spacingAndGlyphs" fill="#111111">THE SHUMAN COMPANY</text>
+</svg>

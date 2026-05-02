@@ -9,14 +9,10 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/images/tsc-logo.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "/images/tsc-logo.png",
-      "sizes": "512x512",
-      "type": "image/png"
+      "src": "/images/shuman-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
     }
   ]
 }
