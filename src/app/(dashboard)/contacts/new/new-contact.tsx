@@ -10,6 +10,7 @@ import {
   type RelationOption,
 } from "@/components/shared/relation-picker";
 import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
+import { PicklistSelect } from "@/components/shared/picklist-select";
 import {
   PhoneSection,
   EmailSection,
@@ -177,19 +178,21 @@ export function NewContact({ userId }: NewContactProps) {
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Type">
-            <Select
-              value={form.type || ""}
-              onChange={(e) => setForm({ ...form, type: (e.target.value || null) as string | null })}
+            <PicklistSelect
+              value={form.type}
+              onChange={(v) => setForm({ ...form, type: v })}
               options={PERSON_TYPES}
               placeholder="Select..."
+              manageTable="list_contact_types"
             />
           </Field>
           <Field label="Level">
-            <Select
-              value={form.exec_level || ""}
-              onChange={(e) => setForm({ ...form, exec_level: (e.target.value || null) as string | null })}
+            <PicklistSelect
+              value={form.exec_level}
+              onChange={(v) => setForm({ ...form, exec_level: v })}
               options={EXEC_LEVELS}
               placeholder="Select..."
+              manageTable="list_contact_levels"
             />
           </Field>
         </div>

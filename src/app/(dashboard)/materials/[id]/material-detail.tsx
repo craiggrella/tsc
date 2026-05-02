@@ -12,6 +12,7 @@ import {
   type RelationOption,
 } from "@/components/shared/relation-picker";
 import { Field, Input, Select } from "@/components/shared/detail-panel";
+import { PicklistSelect } from "@/components/shared/picklist-select";
 import { FilePicker } from "@/components/shared/file-picker";
 import { FilePreview } from "@/components/shared/file-preview";
 

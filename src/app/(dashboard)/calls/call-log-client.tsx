@@ -29,6 +29,7 @@ import { cn, formatPhone, formatUSPhoneInput } from "@/lib/utils";
 import type { CallStatus } from "@/types/database";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { SavedIndicator } from "@/components/shared/saved-indicator";
+import { MailIconButton } from "@/components/shared/email-link";
 
 // ─── Types ──────────────────────────────────────────
 
@@ -926,7 +927,12 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                     {getPhoneDisplay(call)}
                   </td>
                   <td className="px-3 py-2.5 text-zinc-500 whitespace-nowrap">
-                    {call.contact_id && tableEmails[call.contact_id] ? tableEmails[call.contact_id] : "—"}
+                    {call.contact_id && tableEmails[call.contact_id] ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        {tableEmails[call.contact_id]}
+                        <MailIconButton email={tableEmails[call.contact_id]} />
+                      </span>
+                    ) : "—"}
                   </td>
                   <td className="px-3 py-2.5 text-zinc-500 whitespace-nowrap">
                     {call.due_date
@@ -1058,6 +1064,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                 <div key={e.id} className="flex items-center gap-2 text-xs">
                   <span className="w-16 font-medium text-zinc-400">{e.designation}</span>
                   <span className="text-zinc-700">{e.address}</span>
+                  <MailIconButton email={e.address} />
                   {e.is_primary && <span className="text-amber-500 text-[10px]">★</span>}
                 </div>
               ))}

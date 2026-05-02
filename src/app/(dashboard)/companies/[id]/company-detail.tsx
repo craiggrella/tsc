@@ -7,6 +7,8 @@ import { Loader2, ExternalLink } from "lucide-react";
 import { Breadcrumb, buildFromParams } from "@/components/shared/breadcrumb";
 import { createClient } from "@/lib/supabase/client";
 import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
+import { PicklistSelect } from "@/components/shared/picklist-select";
+import { MailIconButton } from "@/components/shared/email-link";
 import { MultiRelationPicker, type RelationOption } from "@/components/shared/relation-picker";
 import { formatPhone } from "@/lib/utils";
 import { usePicklist, toRelationOptions, toSelectOptions } from "@/lib/picklists";
@@ -128,7 +130,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
           .order("is_primary", { ascending: false }),
         supabase
           .from("contact_addresses")
-          .select("id, designation, street, city, state, zip, country, is_primary")
+          .select("id, designation, street, street2, street3, city, state, zip, country, is_primary")
           .eq("entity_type", "company")
           .eq("entity_id", companyId)
           .order("is_primary", { ascending: false }),
@@ -216,6 +218,8 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
       const aList = (addressesData || []).map((a) => ({
         ...a,
         street: a.street || "",
+        street2: a.street2 || "",
+        street3: a.street3 || "",
         city: a.city || "",
         state: a.state || "",
         zip: a.zip || "",
@@ -474,11 +478,12 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
 
           <div className="grid grid-cols-4 gap-3">
             <Field label="Buyer Type">
-              <Select
-                value={form.buyer_type || ""}
-                onChange={(e) => setForm({ ...form, buyer_type: (e.target.value || null) as string | null })}
+              <PicklistSelect
+                value={form.buyer_type}
+                onChange={(v) => setForm({ ...form, buyer_type: v })}
                 options={BUYER_TYPES}
                 placeholder="Not a buyer"
+                manageTable="list_buyer_types"
               />
             </Field>
             <Field label="Types">
@@ -587,7 +592,12 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
                         {person.primary_phone ? formatPhone(person.primary_phone) : "\u2014"}
                       </td>
                       <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
-                        {person.primary_email || "\u2014"}
+                        {person.primary_email ? (
+                          <span className="inline-flex items-center gap-1.5">
+                            {person.primary_email}
+                            <MailIconButton email={person.primary_email} />
+                          </span>
+                        ) : "\u2014"}
                       </td>
                     </tr>
                   ))}
@@ -671,7 +681,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
                 const primaryEmail = emails.find((e) => e.is_primary)?.address || emails[0]?.address || null;
                 const primaryAddr = addresses.find((a) => a.is_primary) || addresses[0] || null;
                 const addrLine = primaryAddr
-                  ? [primaryAddr.street, [primaryAddr.city, primaryAddr.state].filter(Boolean).join(", "), primaryAddr.zip, primaryAddr.country !== "USA" ? primaryAddr.country : ""]
+                  ? [primaryAddr.street, primaryAddr.street2, primaryAddr.street3, [primaryAddr.city, primaryAddr.state].filter(Boolean).join(", "), primaryAddr.zip, primaryAddr.country !== "USA" ? primaryAddr.country : ""]
                       .filter(Boolean)
                       .join(", ")
                   : null;
@@ -688,7 +698,12 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
                         )}
                         <div className="mt-2 space-y-1 text-sm text-zinc-600">
                           {primaryPhone && <div>{formatPhone(primaryPhone)}</div>}
-                          {primaryEmail && <div>{primaryEmail}</div>}
+                          {primaryEmail && (
+                            <div className="inline-flex items-center gap-1.5">
+                              {primaryEmail}
+                              <MailIconButton email={primaryEmail} />
+                            </div>
+                          )}
                           {addrLine && <div>{addrLine}</div>}
                           {socials.length > 0 && (
                             <div className="flex flex-wrap gap-x-3 gap-y-0.5">

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
+import { PicklistSelect } from "@/components/shared/picklist-select";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
 
 const COMPANY_TYPES = [
@@ -139,11 +140,12 @@ export function NewCompany({ userId }: NewCompanyProps) {
         </Field>
 
         <Field label="Buyer Type">
-          <Select
-            value={form.buyer_type || ""}
-            onChange={(e) => setForm({ ...form, buyer_type: (e.target.value || null) as string | null })}
+          <PicklistSelect
+            value={form.buyer_type}
+            onChange={(v) => setForm({ ...form, buyer_type: v })}
             options={BUYER_TYPES}
             placeholder="Not a buyer"
+            manageTable="list_buyer_types"
           />
         </Field>
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { User, Users, HardDrive, List, Check, Plus, ChevronDown, ChevronRight, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -62,8 +63,9 @@ const ROLE_OPTIONS = [
 
 export function SettingsClient({ userId }: SettingsClientProps) {
   const supabase = createClient();
+  const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("profile");
+  const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") || "profile");
 
   // Current user profile
   const [myProfile, setMyProfile] = useState<ProfileRow | null>(null);
@@ -132,6 +134,22 @@ export function SettingsClient({ userId }: SettingsClientProps) {
     }
     loadPicklists();
   }, [activeTab]);
+
+  // Deep-link: ?picklist=list_xxx auto-expands and scrolls to that section
+  const targetPicklist = searchParams.get("picklist");
+  const picklistRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  useEffect(() => {
+    if (activeTab !== "picklists" || !targetPicklist) return;
+    setExpandedPicklists((prev) => {
+      const next = new Set(prev);
+      next.add(targetPicklist);
+      return next;
+    });
+    // Scroll into view after expansion paints
+    requestAnimationFrame(() => {
+      picklistRefs.current[targetPicklist]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [activeTab, targetPicklist]);
 
   function togglePicklistSection(table: string) {
     setExpandedPicklists((prev) => {
@@ -217,7 +235,7 @@ export function SettingsClient({ userId }: SettingsClientProps) {
             .order("is_primary", { ascending: false }),
           supabase
             .from("contact_addresses")
-            .select("id, designation, street, city, state, zip, country, is_primary")
+            .select("id, designation, street, street2, street3, city, state, zip, country, is_primary")
             .eq("entity_type", "profile")
             .eq("entity_id", profile.id)
             .order("is_primary", { ascending: false }),
@@ -357,7 +375,7 @@ export function SettingsClient({ userId }: SettingsClientProps) {
         .order("is_primary", { ascending: false }),
       supabase
         .from("contact_addresses")
-        .select("id, designation, street, city, state, zip, country, is_primary")
+        .select("id, designation, street, street2, street3, city, state, zip, country, is_primary")
         .eq("entity_type", "profile")
         .eq("entity_id", member.id)
         .order("is_primary", { ascending: false }),
@@ -721,7 +739,11 @@ export function SettingsClient({ userId }: SettingsClientProps) {
               const rows = picklistData[pl.table] || [];
 
               return (
-                <div key={pl.table} className="rounded-md border border-zinc-200">
+                <div
+                  key={pl.table}
+                  ref={(el) => { picklistRefs.current[pl.table] = el; }}
+                  className="rounded-md border border-zinc-200"
+                >
                   <button
                     onClick={() => togglePicklistSection(pl.table)}
                     className="flex w-full items-center justify-between px-4 py-2.5 text-left hover:bg-zinc-50 transition-colors"

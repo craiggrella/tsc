@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Plus, Star, X } from "lucide-react";
 import { cn, formatPhone, formatUSPhoneInput } from "@/lib/utils";
+import { MailIconButton } from "@/components/shared/email-link";
 
 // ─── Types ──────────────────────────────────────
 
@@ -24,6 +25,8 @@ export interface AddressRecord {
   id?: string;
   designation: string;
   street: string;
+  street2: string;
+  street3: string;
   city: string;
   state: string;
   zip: string;
@@ -52,8 +55,12 @@ export function PhoneSection({
   onChange: (phones: PhoneRecord[]) => void;
 }) {
   function setPrimary(index: number) {
+    const isCurrentlyPrimary = phones[index]?.is_primary;
     onChange(
-      phones.map((p, i) => ({ ...p, is_primary: i === index }))
+      phones.map((p, i) => ({
+        ...p,
+        is_primary: i === index ? !isCurrentlyPrimary : false,
+      }))
     );
   }
 
@@ -160,7 +167,13 @@ export function EmailSection({
   onChange: (emails: EmailRecord[]) => void;
 }) {
   function setPrimary(index: number) {
-    onChange(emails.map((e, i) => ({ ...e, is_primary: i === index })));
+    const isCurrentlyPrimary = emails[index]?.is_primary;
+    onChange(
+      emails.map((e, i) => ({
+        ...e,
+        is_primary: i === index ? !isCurrentlyPrimary : false,
+      }))
+    );
   }
 
   function update(index: number, patch: Partial<EmailRecord>) {
@@ -226,6 +239,7 @@ export function EmailSection({
               placeholder="Email address"
               className="flex-1 bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
             />
+            <MailIconButton email={email.address?.trim() || null} className="flex-shrink-0" />
             <button
               type="button"
               onClick={() => remove(i)}
@@ -258,7 +272,13 @@ export function AddressSection({
   onChange: (addresses: AddressRecord[]) => void;
 }) {
   function setPrimary(index: number) {
-    onChange(addresses.map((a, i) => ({ ...a, is_primary: i === index })));
+    const isCurrentlyPrimary = addresses[index]?.is_primary;
+    onChange(
+      addresses.map((a, i) => ({
+        ...a,
+        is_primary: i === index ? !isCurrentlyPrimary : false,
+      }))
+    );
   }
 
   function update(index: number, patch: Partial<AddressRecord>) {
@@ -280,6 +300,8 @@ export function AddressSection({
       {
         designation: "Office",
         street: "",
+        street2: "",
+        street3: "",
         city: "",
         state: "",
         zip: "",
@@ -336,11 +358,23 @@ export function AddressSection({
                 <X className="h-3.5 w-3.5 text-zinc-400 hover:text-red-500 transition-colors" />
               </button>
             </div>
-            <div className="ml-7 mt-1 space-y-1">
+            <div className="ml-7 mt-1 max-w-md space-y-1">
               <input
                 value={addr.street}
                 onChange={(e) => update(i, { street: e.target.value })}
                 placeholder="Street"
+                className="w-full bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
+              />
+              <input
+                value={addr.street2}
+                onChange={(e) => update(i, { street2: e.target.value })}
+                placeholder="Address 2 (apt, suite, etc.)"
+                className="w-full bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
+              />
+              <input
+                value={addr.street3}
+                onChange={(e) => update(i, { street3: e.target.value })}
+                placeholder="Address 3 (optional)"
                 className="w-full bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
               />
               <div className="flex gap-2">
@@ -354,13 +388,13 @@ export function AddressSection({
                   value={addr.state}
                   onChange={(e) => update(i, { state: e.target.value })}
                   placeholder="State"
-                  className="w-12 bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
+                  className="w-16 bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
                 />
                 <input
                   value={addr.zip}
                   onChange={(e) => update(i, { zip: e.target.value })}
                   placeholder="Zip"
-                  className="w-16 bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
+                  className="w-20 bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
                 />
               </div>
             </div>
@@ -546,30 +580,24 @@ export async function syncAddresses(
 
   for (const addr of addresses) {
     if (!addr.street?.trim() && !addr.city?.trim()) continue;
+    const payload = {
+      designation: addr.designation,
+      street: addr.street || null,
+      street2: addr.street2 || null,
+      street3: addr.street3 || null,
+      city: addr.city || null,
+      state: addr.state || null,
+      zip: addr.zip || null,
+      country: addr.country || null,
+      is_primary: addr.is_primary,
+    };
     if (addr.id) {
-      await supabase
-        .from("contact_addresses")
-        .update({
-          designation: addr.designation,
-          street: addr.street || null,
-          city: addr.city || null,
-          state: addr.state || null,
-          zip: addr.zip || null,
-          country: addr.country || null,
-          is_primary: addr.is_primary,
-        })
-        .eq("id", addr.id);
+      await supabase.from("contact_addresses").update(payload).eq("id", addr.id);
     } else {
       await supabase.from("contact_addresses").insert({
         entity_type: entityType,
         entity_id: entityId,
-        designation: addr.designation,
-        street: addr.street || null,
-        city: addr.city || null,
-        state: addr.state || null,
-        zip: addr.zip || null,
-        country: addr.country || null,
-        is_primary: addr.is_primary,
+        ...payload,
       });
     }
   }

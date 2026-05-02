@@ -179,7 +179,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
           .order("is_primary", { ascending: false }),
         supabase
           .from("contact_addresses")
-          .select("id, designation, street, city, state, zip, country, is_primary")
+          .select("id, designation, street, street2, street3, city, state, zip, country, is_primary")
           .eq("entity_type", "client")
           .eq("entity_id", clientId)
           .order("is_primary", { ascending: false }),
@@ -219,7 +219,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
 
       const pList = (phonesData || []) as PhoneRecord[];
       const eList = (emailsData || []) as EmailRecord[];
-      const aList = (addressesData || []).map((a) => ({ ...a, street: a.street || "", city: a.city || "", state: a.state || "", zip: a.zip || "", country: a.country || "" })) as AddressRecord[];
+      const aList = (addressesData || []).map((a) => ({ ...a, street: a.street || "", street2: a.street2 || "", street3: a.street3 || "", city: a.city || "", state: a.state || "", zip: a.zip || "", country: a.country || "" })) as AddressRecord[];
       const sList = (socialsData || []) as SocialRecord[];
       setPhones(pList);
       setEmails(eList);

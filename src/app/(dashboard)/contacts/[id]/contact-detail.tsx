@@ -13,6 +13,8 @@ import {
   type RelationOption,
 } from "@/components/shared/relation-picker";
 import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
+import { PicklistSelect } from "@/components/shared/picklist-select";
+import { MailIconButton } from "@/components/shared/email-link";
 import {
   PhoneSection,
   EmailSection,
@@ -163,7 +165,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
           .order("is_primary", { ascending: false }),
         supabase
           .from("contact_addresses")
-          .select("id, designation, street, city, state, zip, country, is_primary")
+          .select("id, designation, street, street2, street3, city, state, zip, country, is_primary")
           .eq("entity_type", "person")
           .eq("entity_id", contactId)
           .order("is_primary", { ascending: false }),
@@ -212,7 +214,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
 
       const pList = (phonesData || []) as PhoneRecord[];
       const eList = (emailsData || []) as EmailRecord[];
-      const aList = (addressesData || []).map((a) => ({ ...a, street: a.street || "", city: a.city || "", state: a.state || "", zip: a.zip || "", country: a.country || "" })) as AddressRecord[];
+      const aList = (addressesData || []).map((a) => ({ ...a, street: a.street || "", street2: a.street2 || "", street3: a.street3 || "", city: a.city || "", state: a.state || "", zip: a.zip || "", country: a.country || "" })) as AddressRecord[];
       const sList = (socialsData || []) as SocialRecord[];
       setPhones(pList);
       setEmails(eList);
@@ -560,19 +562,21 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <Field label="Type">
-              <Select
-                value={form.type || ""}
-                onChange={(e) => setForm({ ...form, type: (e.target.value || null) as string | null })}
+              <PicklistSelect
+                value={form.type}
+                onChange={(v) => setForm({ ...form, type: v })}
                 options={PERSON_TYPES}
                 placeholder="Select..."
+                manageTable="list_contact_types"
               />
             </Field>
             <Field label="Level">
-              <Select
-                value={form.exec_level || ""}
-                onChange={(e) => setForm({ ...form, exec_level: (e.target.value || null) as string | null })}
+              <PicklistSelect
+                value={form.exec_level}
+                onChange={(v) => setForm({ ...form, exec_level: v })}
                 options={EXEC_LEVELS}
                 placeholder="Select..."
+                manageTable="list_contact_levels"
               />
             </Field>
           </div>
@@ -812,9 +816,15 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
                   {phones.length > 0 && (
                     <span>{phones.find((p) => p.is_primary)?.number || phones[0]?.number}</span>
                   )}
-                  {emails.length > 0 && (
-                    <span>{emails.find((e) => e.is_primary)?.address || emails[0]?.address}</span>
-                  )}
+                  {emails.length > 0 && (() => {
+                    const addr = emails.find((e) => e.is_primary)?.address || emails[0]?.address;
+                    return (
+                      <span className="inline-flex items-center gap-1.5">
+                        {addr}
+                        <MailIconButton email={addr} />
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
 

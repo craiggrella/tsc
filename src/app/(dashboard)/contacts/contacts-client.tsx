@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { formatPhone } from "@/lib/utils";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
 import { MultiFilterDropdown } from "@/components/shared/multi-filter-dropdown";
+import { MailIconButton } from "@/components/shared/email-link";
 
 interface CompanyData {
   id: string;
@@ -225,9 +226,9 @@ export function ContactsClient({ userId }: ContactsClientProps) {
         </button>
       </div>
 
-      {/* Search + filter */}
+      {/* Search + Filters */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <div className="relative flex-1 min-w-[200px]">
+        <div className="relative flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
           <input
             value={search}
@@ -236,27 +237,23 @@ export function ContactsClient({ userId }: ContactsClientProps) {
             className="w-full rounded-md border border-zinc-200 bg-white py-1.5 pl-9 pr-3 text-sm outline-none placeholder:text-zinc-400 hover:border-zinc-300 focus:border-zinc-400 transition-colors"
           />
         </div>
-        <span className="text-xs text-zinc-400">
-          {totalCount.toLocaleString()} contact{totalCount !== 1 ? "s" : ""}
-          {activeFilterCount > 0 && (
-            <span className="ml-1 text-amber-600">({activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""})</span>
-          )}
-        </span>
-      </div>
-
-      {/* Filter dropdowns */}
-      <div className="mt-3 flex items-center gap-2">
         <MultiFilterDropdown label="Buyer" options={BUYER_TYPES} selected={buyerTypeFilter} onChange={setBuyerTypeFilter} />
         <MultiFilterDropdown label="Type" options={PERSON_TYPES} selected={typeFilter} onChange={setTypeFilter} />
         <MultiFilterDropdown label="Level" options={EXEC_LEVELS} selected={levelFilter} onChange={setLevelFilter} />
         {activeFilterCount > 0 && (
           <button
             onClick={() => { setBuyerTypeFilter([]); setTypeFilter([]); setLevelFilter([]); setHasBuyerType(false); }}
-            className="text-[11px] text-zinc-400 hover:text-black"
+            className="text-xs text-zinc-400 hover:text-zinc-600 px-2"
           >
             Clear
           </button>
         )}
+        <span className="ml-auto text-xs text-zinc-400">
+          {totalCount.toLocaleString()} contact{totalCount !== 1 ? "s" : ""}
+          {activeFilterCount > 0 && (
+            <span className="ml-1 text-amber-600">({activeFilterCount} filter{activeFilterCount !== 1 ? "s" : ""})</span>
+          )}
+        </span>
       </div>
 
       {/* Table */}
@@ -298,7 +295,14 @@ export function ContactsClient({ userId }: ContactsClientProps) {
                     ) : "\u2014"}
                   </td>
                   <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{formatPhone(tablePhones[contact.id]) || "\u2014"}</td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">{tableEmails[contact.id] || "\u2014"}</td>
+                  <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
+                    {tableEmails[contact.id] ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        {tableEmails[contact.id]}
+                        <MailIconButton email={tableEmails[contact.id]} />
+                      </span>
+                    ) : "\u2014"}
+                  </td>
                 </tr>
               ))
             )}
