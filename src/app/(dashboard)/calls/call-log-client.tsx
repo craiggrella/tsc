@@ -27,6 +27,8 @@ import {
 } from "@/components/shared/detail-panel";
 import { cn, formatPhone, formatUSPhoneInput } from "@/lib/utils";
 import type { CallStatus } from "@/types/database";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { SavedIndicator } from "@/components/shared/saved-indicator";
 
 // ─── Types ──────────────────────────────────────────
 
@@ -570,6 +572,46 @@ export function CallLogClient({ userId }: CallLogClientProps) {
     }
   }, [form, editingId, userId, supabase, newPhones, callerPhones]);
 
+  // Auto-save when editing an existing call. New calls keep the manual Save button
+  // because the record needs to materialize first.
+  type CallAutoSaveSnapshot = { form: typeof emptyCall; newPhones: { designation: string; number: string }[] };
+  const callAutoSaveState: CallAutoSaveSnapshot = useMemo(
+    () => ({ form, newPhones }),
+    [form, newPhones]
+  );
+  const callAutoSaveRestore = useCallback((snap: unknown) => {
+    const s = snap as Partial<CallAutoSaveSnapshot> & Record<string, unknown>;
+    if (s && typeof s === "object" && "form" in s && s.form) {
+      setForm(s.form as typeof emptyCall);
+      if (s.newPhones) setNewPhones(s.newPhones as { designation: string; number: string }[]);
+    } else if (s && typeof s === "object") {
+      const row = s as Record<string, unknown>;
+      setForm((prev) => ({
+        ...prev,
+        contact_id: (row.contact_id as string | null) ?? null,
+        client_id: (row.client_id as string | null) ?? null,
+        call_status: (row.call_status as CallStatus) ?? "to_call",
+        subject: (row.subject as string | null) ?? null,
+        preferred_phone: (row.preferred_phone as string | null) ?? null,
+        log_time: (row.log_time as string | null) ?? null,
+        due_date: (row.due_date as string | null) ?? null,
+        notes: (row.notes as string | null) ?? null,
+        user_id: (row.user_id as string | null) ?? null,
+      }));
+    }
+  }, []);
+  const callAutoSave = useAutoSave<CallAutoSaveSnapshot>({
+    recordId: editingId || "",
+    tableName: "calls",
+    state: callAutoSaveState,
+    restore: callAutoSaveRestore,
+    enabled: !!editingId && panelOpen,
+    save: async () => {
+      // Reuses handleSave for the UPDATE path. handleSave already branches on editingId.
+      await handleSave();
+    },
+  });
+
   const handleDelete = useCallback(async () => {
     if (!editingId || !confirm("Delete this call?")) return;
     setDeleting(true);
@@ -933,13 +975,23 @@ export function CallLogClient({ userId }: CallLogClientProps) {
               >
                 Close
               </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-              >
-                {saving ? "Saving..." : saved ? "Saved ✓" : "Save"}
-              </button>
+              {editingId ? (
+                <SavedIndicator
+                  saving={callAutoSave.saving || saving}
+                  savedAt={callAutoSave.savedAt}
+                  error={callAutoSave.error}
+                  hasUndo={callAutoSave.hasUndo}
+                  onUndo={callAutoSave.undo}
+                />
+              ) : (
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                >
+                  {saving ? "Saving..." : "Save"}
+                </button>
+              )}
             </div>
           </div>
         }
