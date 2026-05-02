@@ -14,11 +14,13 @@ export default async function HomePage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-white">
-      <Link href="/login">
+      <Link href="/login" className="block">
         <img
           src="/images/shuman-logo.svg"
           alt="The Shuman Company"
-          className="w-auto max-w-[400px] sm:max-w-[500px] cursor-pointer"
+          width={500}
+          height={500}
+          className="h-auto w-[200px] sm:w-[240px] cursor-pointer"
         />
       </Link>
     </div>

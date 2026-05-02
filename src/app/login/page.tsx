@@ -59,7 +59,9 @@ export default function LoginPage() {
           <img
             src="/images/shuman-logo.svg"
             alt="The Shuman Company"
-            className="w-auto max-w-[280px]"
+            width={160}
+            height={160}
+            className="h-auto w-[160px]"
           />
         </div>
 
