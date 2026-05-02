@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { Loader2, ExternalLink, Plus, Trash2, Copy, Check as CheckIcon } from "lucide-react";
 import { Breadcrumb, buildFromParams } from "@/components/shared/breadcrumb";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -109,6 +109,8 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   const [emails, setEmails] = useState<EmailRecord[]>([]);
   const [addresses, setAddresses] = useState<AddressRecord[]>([]);
   const [socials, setSocials] = useState<SocialRecord[]>([]);
+  const [macros, setMacros] = useState<{ id?: string; label: string; content: string; sort_order: number; updated_at?: string | null }[]>([]);
+  const [origMacroIds, setOrigMacroIds] = useState<Set<string>>(new Set());
   const [origPhoneIds, setOrigPhoneIds] = useState<Set<string>>(new Set());
   const [origEmailIds, setOrigEmailIds] = useState<Set<string>>(new Set());
   const [origAddressIds, setOrigAddressIds] = useState<Set<string>>(new Set());
@@ -157,6 +159,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
         { data: socialsData },
         { data: materials },
         { data: creditsData },
+        { data: macrosData },
       ] = await Promise.all([
         supabase
           .from("clients")
@@ -198,6 +201,11 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
           .select("id, project_id, project_name, level, credit_status, start_year, end_year, project:projects!project_id(id, name)")
           .eq("client_id", clientId)
           .order("created_at", { ascending: false }),
+        supabase
+          .from("client_macros")
+          .select("id, label, content, sort_order, updated_at")
+          .eq("client_id", clientId)
+          .order("sort_order"),
       ]);
 
       if (!client) {
@@ -229,6 +237,10 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
       setOrigEmailIds(new Set(eList.filter((e) => e.id).map((e) => e.id!)));
       setOrigAddressIds(new Set(aList.filter((a) => a.id).map((a) => a.id!)));
       setOrigSocialIds(new Set(sList.filter((s) => s.id).map((s) => s.id!)));
+
+      const mList = (macrosData || []).map((m) => ({ id: m.id, label: m.label || "", content: m.content || "", sort_order: m.sort_order ?? 0, updated_at: m.updated_at || null }));
+      setMacros(mList);
+      setOrigMacroIds(new Set(mList.filter((m) => m.id).map((m) => m.id!)));
 
       setRelatedMaterials(materials || []);
 
@@ -562,11 +574,12 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     emails: EmailRecord[];
     addresses: AddressRecord[];
     socials: SocialRecord[];
+    macros: typeof macros;
   };
 
   const autoSaveState: ClientAutoSaveSnapshot = useMemo(
-    () => ({ form, phones, emails, addresses, socials }),
-    [form, phones, emails, addresses, socials]
+    () => ({ form, phones, emails, addresses, socials, macros }),
+    [form, phones, emails, addresses, socials, macros]
   );
 
   const autoSaveRestore = useCallback((snap: unknown) => {
@@ -577,6 +590,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
       if (s.emails) setEmails(s.emails as EmailRecord[]);
       if (s.addresses) setAddresses(s.addresses as AddressRecord[]);
       if (s.socials) setSocials(s.socials as SocialRecord[]);
+      if (s.macros) setMacros(s.macros as typeof macros);
     } else if (s && typeof s === "object") {
       const row = s as Record<string, unknown>;
       setForm({
@@ -608,6 +622,40 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
       setOrigEmailIds(new Set(snap.emails.filter((e) => e.id).map((e) => e.id!)));
       setOrigAddressIds(new Set(snap.addresses.filter((a) => a.id).map((a) => a.id!)));
       setOrigSocialIds(new Set(snap.socials.filter((s) => s.id).map((s) => s.id!)));
+
+      // Sync macros (delete removed, upsert kept/new)
+      const currentIds = new Set(snap.macros.filter((m) => m.id).map((m) => m.id!));
+      const toDelete = [...origMacroIds].filter((id) => !currentIds.has(id));
+      if (toDelete.length > 0) {
+        await supabase.from("client_macros").delete().in("id", toDelete);
+      }
+      const updatedMacros = [...snap.macros];
+      for (let i = 0; i < updatedMacros.length; i++) {
+        const m = updatedMacros[i];
+        const payload = {
+          label: m.label || null,
+          content: m.content,
+          sort_order: i,
+        };
+        if (m.id) {
+          const { data } = await supabase
+            .from("client_macros")
+            .update(payload)
+            .eq("id", m.id)
+            .select("id, updated_at")
+            .single();
+          if (data) updatedMacros[i] = { ...m, updated_at: data.updated_at };
+        } else {
+          const { data } = await supabase
+            .from("client_macros")
+            .insert({ ...payload, client_id: clientId })
+            .select("id, updated_at")
+            .single();
+          if (data) updatedMacros[i] = { ...m, id: data.id, updated_at: data.updated_at };
+        }
+      }
+      setMacros(updatedMacros);
+      setOrigMacroIds(new Set(updatedMacros.filter((m) => m.id).map((m) => m.id!)));
     },
   });
 
@@ -722,6 +770,11 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
           <EmailSection emails={emails} onChange={setEmails} />
           <AddressSection addresses={addresses} onChange={setAddresses} />
           <SocialSection socials={socials} onChange={setSocials} />
+
+          <MacrosSection
+            macros={macros}
+            onChange={setMacros}
+          />
 
           <Field label="Notes">
             <Textarea
@@ -1188,6 +1241,124 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
         </button>
       </div>
 
+    </div>
+  );
+}
+
+// ─── Macros Section ──────────────────────────────────
+
+interface MacroRow {
+  id?: string;
+  label: string;
+  content: string;
+  sort_order: number;
+  updated_at?: string | null;
+}
+
+function MacrosSection({
+  macros,
+  onChange,
+}: {
+  macros: MacroRow[];
+  onChange: (macros: MacroRow[]) => void;
+}) {
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+
+  function update(index: number, patch: Partial<MacroRow>) {
+    onChange(macros.map((m, i) => (i === index ? { ...m, ...patch } : m)));
+  }
+
+  function remove(index: number) {
+    onChange(macros.filter((_, i) => i !== index));
+  }
+
+  function add() {
+    onChange([
+      ...macros,
+      { label: "", content: "", sort_order: macros.length },
+    ]);
+  }
+
+  async function copyMacro(idx: number, content: string) {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx((current) => (current === idx ? null : current)), 1500);
+    } catch (err) {
+      console.error("Clipboard copy failed:", err);
+    }
+  }
+
+  function formatTimestamp(iso: string | null | undefined) {
+    if (!iso) return "Not saved yet";
+    const d = new Date(iso);
+    return `Last updated ${d.toLocaleString([], { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}`;
+  }
+
+  return (
+    <div>
+      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+        Macros
+      </p>
+      <div className="space-y-3">
+        {macros.map((macro, i) => (
+          <div key={macro.id || `new-${i}`} className="group rounded-md border border-zinc-200 bg-white p-2">
+            <div className="flex items-center gap-2 mb-1.5">
+              <input
+                value={macro.label}
+                onChange={(e) => update(i, { label: e.target.value })}
+                placeholder="Label (optional)"
+                className="flex-1 bg-transparent text-xs font-medium text-zinc-600 outline-none placeholder:text-zinc-300"
+              />
+              <button
+                type="button"
+                onClick={() => copyMacro(i, macro.content)}
+                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-zinc-500 hover:bg-zinc-100 hover:text-black transition-colors"
+                title="Copy to clipboard"
+                disabled={!macro.content}
+              >
+                {copiedIdx === i ? (
+                  <>
+                    <CheckIcon className="h-3 w-3 text-emerald-500" />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3 w-3" />
+                    Copy
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Delete macro"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-zinc-400 hover:text-red-500 transition-colors" />
+              </button>
+            </div>
+            <textarea
+              value={macro.content}
+              onChange={(e) => update(i, { content: e.target.value })}
+              placeholder="Snippet text..."
+              rows={3}
+              className="w-full resize-y rounded border border-zinc-100 bg-zinc-50/50 px-2 py-1.5 text-sm text-zinc-800 outline-none focus:border-zinc-300 placeholder:text-zinc-300"
+            />
+            <p className="mt-1 text-[10px] text-zinc-400">
+              {formatTimestamp(macro.updated_at)}
+            </p>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={add}
+        className="mt-1 inline-flex items-center gap-1 px-1.5 py-1 text-xs text-zinc-400 hover:text-black transition-colors"
+      >
+        <Plus className="h-3 w-3" />
+        Add Macro
+      </button>
     </div>
   );
 }

@@ -528,29 +528,30 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
             </Field>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Company">
-              <div className="flex items-center gap-1.5">
-                <div className="flex-1">
-                  <RelationPicker
-                    value={form.company_id}
-                    onChange={(id) => {
-                      setForm({ ...form, company_id: id });
-                      setCompanyBuyerType(companies.find((c) => c.id === id)?.buyer_type || null);
-                    }}
-                    options={companyOptions}
-                    placeholder="Select company..."
-                  />
-                </div>
+            <Field label={
+              <span className="flex items-center gap-1.5">
+                Company
                 {form.company_id && (
                   <Link
                     href={`/companies/${form.company_id}`}
-                    className="shrink-0 rounded p-1 text-zinc-400 hover:text-black hover:bg-zinc-100 transition-colors"
-                    title="View company"
+                    className="inline-flex items-center gap-0.5 text-[11px] font-normal text-zinc-400 hover:text-black transition-colors"
+                    title="View full company record"
+                    prefetch
                   >
-                    <ExternalLink className="h-3.5 w-3.5" />
+                    <ExternalLink className="h-3 w-3" />
                   </Link>
                 )}
-              </div>
+              </span>
+            }>
+              <RelationPicker
+                value={form.company_id}
+                onChange={(id) => {
+                  setForm({ ...form, company_id: id });
+                  setCompanyBuyerType(companies.find((c) => c.id === id)?.buyer_type || null);
+                }}
+                options={companyOptions}
+                placeholder="Select company..."
+              />
             </Field>
             <Field label="Title">
               <Input
@@ -581,10 +582,12 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
             </Field>
           </div>
 
-          <PhoneSection phones={phones} onChange={setPhones} />
-          <EmailSection emails={emails} onChange={setEmails} />
-          <AddressSection addresses={addresses} onChange={setAddresses} />
-          <SocialSection socials={socials} onChange={setSocials} />
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-4 grid grid-cols-1 md:grid-cols-2 gap-x-24 gap-y-12">
+            <PhoneSection phones={phones} onChange={setPhones} />
+            <EmailSection emails={emails} onChange={setEmails} />
+            <AddressSection addresses={addresses} onChange={setAddresses} />
+            <SocialSection socials={socials} onChange={setSocials} />
+          </div>
 
           <Field label={
             <span className="flex items-center gap-1.5">

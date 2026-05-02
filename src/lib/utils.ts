@@ -36,7 +36,7 @@ export function formatPhone(phone: string | null | undefined): string {
 /**
  * Live-format a US phone number as the user types. Returns a partial
  * `XXX-XXX-XXXX` string (e.g., "412-44" while still typing) and preserves
- * extensions ("412-444-8675 x123"). Empty input returns "". For INTL
+ * extensions ("XXX-XXX-XXXX x123"). Empty input returns "". For INTL
  * numbers the caller should pass the value through unchanged instead.
  */
 export function formatUSPhoneInput(value: string): string {

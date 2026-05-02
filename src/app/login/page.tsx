@@ -55,11 +55,12 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-white">
       <div className="w-full max-w-sm px-6">
-        <div className="mb-10 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight text-black">
-            TSC
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">The Shuman Company</p>
+        <div className="mb-10 flex justify-center">
+          <img
+            src="/images/shuman-logo.svg"
+            alt="The Shuman Company"
+            className="w-auto max-w-[280px]"
+          />
         </div>
 
         {magicSent ? (

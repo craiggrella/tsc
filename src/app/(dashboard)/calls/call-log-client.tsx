@@ -1143,7 +1143,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                           )
                         )
                       }
-                      placeholder={np.designation === "INTL" ? "+44 20 7946 0958" : "412-444-8675"}
+                      placeholder={np.designation === "INTL" ? "Add international phone" : "Add phone"}
                       className="flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-xs outline-none"
                       autoFocus={i === newPhones.length - 1}
                     />

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Users,
   Contact,
@@ -14,9 +14,11 @@ import {
   Clapperboard,
   FileText,
   Building2,
+  LogOut,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -29,7 +31,6 @@ const navItems = [
   { label: "Companies", href: "/companies", icon: Building2 },
   { label: "Projects", href: "/projects", icon: Clapperboard },
   { label: "Files", href: "/files", icon: FolderOpen },
-  { label: "Settings", href: "/settings", icon: Settings },
 ];
 
 interface SidebarNavProps {
@@ -39,6 +40,14 @@ interface SidebarNavProps {
 
 export function SidebarNav({ open, onClose }: SidebarNavProps) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <>
@@ -92,6 +101,30 @@ export function SidebarNav({ open, onClose }: SidebarNavProps) {
             );
           })}
         </nav>
+
+        {/* Footer: Settings + Logout */}
+        <div className="border-t border-zinc-200 px-3 py-3 space-y-0.5">
+          <Link
+            href="/settings"
+            onClick={onClose}
+            className={cn(
+              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              pathname.startsWith("/settings")
+                ? "bg-zinc-200/70 text-black"
+                : "text-zinc-500 hover:bg-zinc-100 hover:text-black"
+            )}
+          >
+            <Settings className="h-4 w-4" />
+            Settings
+          </Link>
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-zinc-500 hover:bg-zinc-100 hover:text-black transition-colors"
+          >
+            <LogOut className="h-4 w-4" />
+            Logout
+          </button>
+        </div>
       </aside>
     </>
   );

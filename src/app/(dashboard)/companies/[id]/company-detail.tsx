@@ -512,10 +512,12 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
             </Field>
           </div>
 
-          <PhoneSection phones={phones} onChange={setPhones} />
-          <EmailSection emails={emails} onChange={setEmails} />
-          <AddressSection addresses={addresses} onChange={setAddresses} />
-          <SocialSection socials={socials} onChange={setSocials} />
+          <div className="rounded-lg border border-zinc-200 bg-zinc-50/60 p-4 grid grid-cols-1 md:grid-cols-2 gap-x-24 gap-y-12">
+            <PhoneSection phones={phones} onChange={setPhones} />
+            <EmailSection emails={emails} onChange={setEmails} />
+            <AddressSection addresses={addresses} onChange={setAddresses} />
+            <SocialSection socials={socials} onChange={setSocials} />
+          </div>
 
           <Field label="Notes">
             <Textarea

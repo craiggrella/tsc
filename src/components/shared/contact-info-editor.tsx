@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Star, X } from "lucide-react";
+import { Plus, Star, X, MapPin, ExternalLink } from "lucide-react";
 import { cn, formatPhone, formatUSPhoneInput } from "@/lib/utils";
 import { MailIconButton } from "@/components/shared/email-link";
 
@@ -132,7 +132,7 @@ export function PhoneSection({
                       : formatUSPhoneInput(e.target.value),
                 })
               }
-              placeholder={phone.designation === "INTL" ? "+44 20 7946 0958" : "412-444-8675"}
+              placeholder={phone.designation === "INTL" ? "Add international phone" : "Add phone"}
               className="flex-1 bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
             />
             <button
@@ -236,14 +236,14 @@ export function EmailSection({
             <input
               value={email.address}
               onChange={(e) => update(i, { address: e.target.value })}
-              placeholder="Email address"
+              placeholder="Add email"
               className="flex-1 bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
             />
             <MailIconButton email={email.address?.trim() || null} className="flex-shrink-0" />
             <button
               type="button"
               onClick={() => remove(i)}
-              className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              className="flex-shrink-0 ml-4 opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <X className="h-3.5 w-3.5 text-zinc-400 hover:text-red-500 transition-colors" />
             </button>
@@ -350,10 +350,26 @@ export function AddressSection({
                 ))}
               </select>
               <div className="flex-1" />
+              {(addr.street || addr.city) && (
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                    [addr.street, addr.street2, addr.street3, addr.city, addr.state, addr.zip, addr.country]
+                      .filter(Boolean)
+                      .join(", ")
+                  )}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-shrink-0 text-zinc-400 hover:text-black transition-colors"
+                  title="Open in maps"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <MapPin className="h-3.5 w-3.5" />
+                </a>
+              )}
               <button
                 type="button"
                 onClick={() => remove(i)}
-                className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="flex-shrink-0 ml-4 opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <X className="h-3.5 w-3.5 text-zinc-400 hover:text-red-500 transition-colors" />
               </button>
@@ -462,10 +478,22 @@ export function SocialSection({
               placeholder="URL or handle"
               className="flex-1 bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
             />
+            {social.url?.trim() && (
+              <a
+                href={social.url.startsWith("http") ? social.url : `https://${social.url}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-shrink-0 text-zinc-400 hover:text-black transition-colors"
+                title="Open link"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            )}
             <button
               type="button"
               onClick={() => remove(i)}
-              className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              className="flex-shrink-0 ml-4 opacity-0 group-hover:opacity-100 transition-opacity"
             >
               <X className="h-3.5 w-3.5 text-zinc-400 hover:text-red-500 transition-colors" />
             </button>
