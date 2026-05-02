@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { Field, Input, Textarea } from "@/components/shared/detail-panel";
+import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
+import { usePicklist, toSelectOptions } from "@/lib/picklists";
 
 const COMPANY_TYPES = [
   "Pod",
@@ -23,6 +24,7 @@ const emptyForm = {
   outlet: null as string | null,
   department: null as string | null,
   phone: null as string | null,
+  buyer_type: null as string | null,
   notes: null as string | null,
 };
 
@@ -33,6 +35,8 @@ interface NewCompanyProps {
 export function NewCompany({ userId }: NewCompanyProps) {
   const supabase = createClient();
   const router = useRouter();
+  const buyerTypesItems = usePicklist("list_buyer_types");
+  const BUYER_TYPES = toSelectOptions(buyerTypesItems);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
@@ -61,7 +65,7 @@ export function NewCompany({ userId }: NewCompanyProps) {
   }, [form, supabase, router]);
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       <Link
         href="/companies"
         className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-black transition-colors mb-4"
@@ -131,6 +135,15 @@ export function NewCompany({ userId }: NewCompanyProps) {
             value={form.phone || ""}
             onChange={(e) => setForm({ ...form, phone: e.target.value || null })}
             placeholder="Phone number"
+          />
+        </Field>
+
+        <Field label="Buyer Type">
+          <Select
+            value={form.buyer_type || ""}
+            onChange={(e) => setForm({ ...form, buyer_type: (e.target.value || null) as string | null })}
+            options={BUYER_TYPES}
+            placeholder="Not a buyer"
           />
         </Field>
 

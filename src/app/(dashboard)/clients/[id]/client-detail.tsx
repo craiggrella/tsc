@@ -27,6 +27,8 @@ import {
   type SocialRecord,
 } from "@/components/shared/contact-info-editor";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { SavedIndicator } from "@/components/shared/saved-indicator";
 
 interface CompanyData {
   id: string;
@@ -92,8 +94,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState("info");
 
@@ -396,13 +396,13 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
       if (meetingIds.length > 0) {
         const { data: meetingPeople } = await supabase
           .from("meeting_people")
-          .select("person_id, meeting_id, person:people(full_name, buyer_type, company:companies!company_id(name))")
+          .select("person_id, meeting_id, person:people(full_name, company:companies!company_id(name, buyer_type))")
           .in("meeting_id", meetingIds);
         for (const row of meetingPeople || []) {
-          const r = row as unknown as { person_id: string; meeting_id: string; person: { full_name: string; buyer_type: string | null; company: { name: string } | null } | null };
+          const r = row as unknown as { person_id: string; meeting_id: string; person: { full_name: string; company: { name: string; buyer_type: string | null } | null } | null };
           if (!r.person) continue;
           if (!metMap[r.person_id]) {
-            metMap[r.person_id] = { count: 0, lastDate: null, full_name: r.person.full_name, company: r.person.company?.name || null, buyer_type: r.person.buyer_type };
+            metMap[r.person_id] = { count: 0, lastDate: null, full_name: r.person.full_name, company: r.person.company?.name || null, buyer_type: r.person.company?.buyer_type || null };
           }
           metMap[r.person_id].count++;
           const meetDate = meetingDateMap.get(r.meeting_id) || null;
@@ -414,8 +414,8 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
 
       const { data: allBuyers } = await supabase
         .from("people")
-        .select("id, full_name, title, buyer_type, company:companies!company_id(name)")
-        .not("buyer_type", "is", null)
+        .select("id, full_name, title, company:companies!company_id!inner(name, buyer_type)")
+        .not("company.buyer_type", "is", null)
         .order("full_name");
 
       const metIds = new Set(Object.keys(metMap));
@@ -431,8 +431,8 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
       const notMet = (allBuyers || [])
         .filter((b) => !metIds.has(b.id))
         .map((b) => {
-          const bb = b as unknown as { id: string; full_name: string; title: string | null; buyer_type: string | null; company: { name: string } | null };
-          return { id: bb.id, full_name: bb.full_name, company_name: bb.company?.name || null, title: bb.title, buyer_type: bb.buyer_type };
+          const bb = b as unknown as { id: string; full_name: string; title: string | null; company: { name: string; buyer_type: string | null } | null };
+          return { id: bb.id, full_name: bb.full_name, company_name: bb.company?.name || null, title: bb.title, buyer_type: bb.company?.buyer_type || null };
         });
 
       setGridMetWith(met);
@@ -556,32 +556,60 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     }
   }
 
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    try {
-      await supabase
-        .from("clients")
-        .update({ ...form })
-        .eq("id", clientId);
+  type ClientAutoSaveSnapshot = {
+    form: typeof emptyForm;
+    phones: PhoneRecord[];
+    emails: EmailRecord[];
+    addresses: AddressRecord[];
+    socials: SocialRecord[];
+  };
 
-      await Promise.all([
-        syncPhones("client", clientId, phones, origPhoneIds),
-        syncEmails("client", clientId, emails, origEmailIds),
-        syncAddresses("client", clientId, addresses, origAddressIds),
-        syncSocials("client", clientId, socials, origSocialIds),
-      ]);
+  const autoSaveState: ClientAutoSaveSnapshot = useMemo(
+    () => ({ form, phones, emails, addresses, socials }),
+    [form, phones, emails, addresses, socials]
+  );
 
-      setOrigPhoneIds(new Set(phones.filter((p) => p.id).map((p) => p.id!)));
-      setOrigEmailIds(new Set(emails.filter((e) => e.id).map((e) => e.id!)));
-      setOrigAddressIds(new Set(addresses.filter((a) => a.id).map((a) => a.id!)));
-      setOrigSocialIds(new Set(socials.filter((s) => s.id).map((s) => s.id!)));
-
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    } finally {
-      setSaving(false);
+  const autoSaveRestore = useCallback((snap: unknown) => {
+    const s = snap as Partial<ClientAutoSaveSnapshot> & Record<string, unknown>;
+    if (s && typeof s === "object" && "form" in s && s.form) {
+      setForm(s.form as typeof emptyForm);
+      if (s.phones) setPhones(s.phones as PhoneRecord[]);
+      if (s.emails) setEmails(s.emails as EmailRecord[]);
+      if (s.addresses) setAddresses(s.addresses as AddressRecord[]);
+      if (s.socials) setSocials(s.socials as SocialRecord[]);
+    } else if (s && typeof s === "object") {
+      const row = s as Record<string, unknown>;
+      setForm({
+        full_name: (row.full_name as string) ?? "",
+        first_name: (row.first_name as string | null) ?? null,
+        last_name: (row.last_name as string | null) ?? null,
+        company_id: (row.company_id as string | null) ?? null,
+        staff_level: (row.staff_level as string | null) ?? null,
+        notes: (row.notes as string | null) ?? null,
+      });
     }
-  }, [form, clientId, supabase, phones, emails, addresses, socials, origPhoneIds, origEmailIds, origAddressIds, origSocialIds]);
+  }, []);
+
+  const autoSave = useAutoSave<ClientAutoSaveSnapshot>({
+    recordId: clientId,
+    tableName: "clients",
+    state: autoSaveState,
+    restore: autoSaveRestore,
+    enabled: !loading,
+    save: async (snap) => {
+      await supabase.from("clients").update({ ...snap.form }).eq("id", clientId);
+      await Promise.all([
+        syncPhones("client", clientId, snap.phones, origPhoneIds),
+        syncEmails("client", clientId, snap.emails, origEmailIds),
+        syncAddresses("client", clientId, snap.addresses, origAddressIds),
+        syncSocials("client", clientId, snap.socials, origSocialIds),
+      ]);
+      setOrigPhoneIds(new Set(snap.phones.filter((p) => p.id).map((p) => p.id!)));
+      setOrigEmailIds(new Set(snap.emails.filter((e) => e.id).map((e) => e.id!)));
+      setOrigAddressIds(new Set(snap.addresses.filter((a) => a.id).map((a) => a.id!)));
+      setOrigSocialIds(new Set(snap.socials.filter((s) => s.id).map((s) => s.id!)));
+    },
+  });
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Delete this client?")) return;
@@ -613,7 +641,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       <Breadcrumb fallbackHref="/clients" fallbackLabel="Clients" currentLabel={form.full_name || "Untitled"} />
 
       {/* Header */}
@@ -621,13 +649,13 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
         <h1 className="text-xl font-semibold tracking-tight text-black">
           {form.full_name || "Untitled Client"}
         </h1>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="rounded-md bg-black px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-        >
-          {saving ? "Saving..." : saved ? "Saved \u2713" : "Save"}
-        </button>
+        <SavedIndicator
+          saving={autoSave.saving}
+          savedAt={autoSave.savedAt}
+          error={autoSave.error}
+          hasUndo={autoSave.hasUndo}
+          onUndo={autoSave.undo}
+        />
       </div>
 
       {/* Tabs */}

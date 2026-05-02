@@ -247,7 +247,7 @@ export function NewSubmission({ userId }: NewSubmissionProps) {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       {/* Back + Save */}
       <div className="flex items-center justify-between mb-6">
         <Link

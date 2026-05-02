@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Plus, Star, X } from "lucide-react";
-import { cn, formatPhone } from "@/lib/utils";
+import { cn, formatPhone, formatUSPhoneInput } from "@/lib/utils";
 
 // ─── Types ──────────────────────────────────────
 
@@ -37,7 +37,7 @@ export interface SocialRecord {
   url: string;
 }
 
-const PHONE_DESIGNATIONS = ["Cell", "Office", "Home", "Assistant", "Fax", "Other"];
+const PHONE_DESIGNATIONS = ["Cell", "Office", "Home", "Assistant", "Fax", "INTL", "Other"];
 const EMAIL_DESIGNATIONS = ["Work", "Personal", "Assistant", "Other"];
 const ADDRESS_DESIGNATIONS = ["Office", "Home", "Mailing", "Other"];
 const SOCIAL_PLATFORMS = ["Facebook", "Instagram", "YouTube", "LinkedIn", "Twitter/X", "TikTok", "IMDb", "Website", "Other"];
@@ -116,9 +116,16 @@ export function PhoneSection({
               ))}
             </select>
             <input
-              value={phone.number}
-              onChange={(e) => update(i, { number: e.target.value })}
-              placeholder="Phone number"
+              value={phone.designation === "INTL" ? phone.number : formatUSPhoneInput(phone.number)}
+              onChange={(e) =>
+                update(i, {
+                  number:
+                    phone.designation === "INTL"
+                      ? e.target.value
+                      : formatUSPhoneInput(e.target.value),
+                })
+              }
+              placeholder={phone.designation === "INTL" ? "+44 20 7946 0958" : "412-444-8675"}
               className="flex-1 bg-transparent text-sm text-zinc-700 outline-none placeholder:text-zinc-300"
             />
             <button

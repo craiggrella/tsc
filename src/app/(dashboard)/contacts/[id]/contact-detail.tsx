@@ -28,10 +28,13 @@ import {
   type SocialRecord,
 } from "@/components/shared/contact-info-editor";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { SavedIndicator } from "@/components/shared/saved-indicator";
 
 interface CompanyData {
   id: string;
   name: string;
+  buyer_type?: string | null;
 }
 
 const emptyForm = {
@@ -44,7 +47,6 @@ const emptyForm = {
   company_id: null as string | null,
   department: [] as string[],
   assistant_id: null as string | null,
-  buyer_type: null as string | null,
   notes: null as string | null,
 };
 
@@ -60,16 +62,13 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
   const PERSON_TYPES = toSelectOptions(personTypesItems);
   const execLevelsItems = usePicklist("list_contact_levels");
   const EXEC_LEVELS = toSelectOptions(execLevelsItems);
-  const buyerTypesItems = usePicklist("list_buyer_types");
-  const BUYER_TYPES = toSelectOptions(buyerTypesItems);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState("info");
 
   const [companies, setCompanies] = useState<CompanyData[]>([]);
+  const [companyBuyerType, setCompanyBuyerType] = useState<string | null>(null);
   const [contactPeople, setContactPeople] = useState<{ id: string; full_name: string }[]>([]);
 
   // Sub-records
@@ -145,10 +144,10 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
       ] = await Promise.all([
         supabase
           .from("people")
-          .select("*, company:companies!company_id(id, name)")
+          .select("*, company:companies!company_id(id, name, buyer_type)")
           .eq("id", contactId)
           .single(),
-        supabase.from("companies").select("id, name").order("name"),
+        supabase.from("companies").select("id, name, buyer_type").order("name"),
         supabase.from("people").select("id, full_name").order("full_name"),
         supabase
           .from("contact_phones")
@@ -204,9 +203,9 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
         company_id: contact.company_id,
         department: contact.department,
         assistant_id: contact.assistant_id,
-        buyer_type: contact.buyer_type || null,
         notes: contact.notes,
       });
+      setCompanyBuyerType((contact as { company?: { buyer_type?: string | null } | null }).company?.buyer_type || null);
 
       setCompanies(companiesData || []);
       setContactPeople(peopleData || []);
@@ -282,7 +281,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
 
   // Load grid data when tab is selected
   useEffect(() => {
-    if (activeTab !== "grid" || gridLoaded || !form.buyer_type) return;
+    if (activeTab !== "grid" || gridLoaded || !companyBuyerType) return;
     setGridLoading(true);
     async function loadGrid() {
       // Get all clients
@@ -352,7 +351,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
       setGridLoaded(true);
     }
     loadGrid();
-  }, [activeTab, gridLoaded, form.buyer_type, contactId, supabase]);
+  }, [activeTab, gridLoaded, companyBuyerType, contactId, supabase]);
 
   async function loadMoreCalls() {
     setCallsLoading(true);
@@ -372,32 +371,69 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
     }
   }
 
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    try {
-      await supabase
-        .from("people")
-        .update({ ...form })
-        .eq("id", contactId);
+  // Auto-save: any change to form/phones/emails/addresses/socials is debounced and persisted.
+  type AutoSaveSnapshot = {
+    form: typeof emptyForm;
+    phones: PhoneRecord[];
+    emails: EmailRecord[];
+    addresses: AddressRecord[];
+    socials: SocialRecord[];
+  };
 
+  const autoSaveState: AutoSaveSnapshot = useMemo(
+    () => ({ form, phones, emails, addresses, socials }),
+    [form, phones, emails, addresses, socials]
+  );
+
+  const autoSaveRestore = useCallback(
+    (snap: unknown) => {
+      const s = snap as Partial<AutoSaveSnapshot> & Record<string, unknown>;
+      // In-memory snapshots have a `form` key; server snapshots are the raw people row.
+      if (s && typeof s === "object" && "form" in s && s.form) {
+        setForm(s.form as typeof emptyForm);
+        if (s.phones) setPhones(s.phones as PhoneRecord[]);
+        if (s.emails) setEmails(s.emails as EmailRecord[]);
+        if (s.addresses) setAddresses(s.addresses as AddressRecord[]);
+        if (s.socials) setSocials(s.socials as SocialRecord[]);
+      } else if (s && typeof s === "object") {
+        const row = s as Record<string, unknown>;
+        setForm({
+          full_name: (row.full_name as string) ?? "",
+          first_name: (row.first_name as string | null) ?? null,
+          last_name: (row.last_name as string | null) ?? null,
+          title: (row.title as string | null) ?? null,
+          type: (row.type as string | null) ?? null,
+          exec_level: (row.exec_level as string | null) ?? null,
+          company_id: (row.company_id as string | null) ?? null,
+          department: (row.department as string[] | null) ?? [],
+          assistant_id: (row.assistant_id as string | null) ?? null,
+          notes: (row.notes as string | null) ?? null,
+        });
+      }
+    },
+    []
+  );
+
+  const autoSave = useAutoSave<AutoSaveSnapshot>({
+    recordId: contactId,
+    tableName: "people",
+    state: autoSaveState,
+    restore: autoSaveRestore,
+    enabled: !loading,
+    save: async (snap) => {
+      await supabase.from("people").update({ ...snap.form }).eq("id", contactId);
       await Promise.all([
-        syncPhones("person", contactId, phones, origPhoneIds),
-        syncEmails("person", contactId, emails, origEmailIds),
-        syncAddresses("person", contactId, addresses, origAddressIds),
-        syncSocials("person", contactId, socials, origSocialIds),
+        syncPhones("person", contactId, snap.phones, origPhoneIds),
+        syncEmails("person", contactId, snap.emails, origEmailIds),
+        syncAddresses("person", contactId, snap.addresses, origAddressIds),
+        syncSocials("person", contactId, snap.socials, origSocialIds),
       ]);
-
-      setOrigPhoneIds(new Set(phones.filter((p) => p.id).map((p) => p.id!)));
-      setOrigEmailIds(new Set(emails.filter((e) => e.id).map((e) => e.id!)));
-      setOrigAddressIds(new Set(addresses.filter((a) => a.id).map((a) => a.id!)));
-      setOrigSocialIds(new Set(socials.filter((s) => s.id).map((s) => s.id!)));
-
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    } finally {
-      setSaving(false);
-    }
-  }, [form, contactId, supabase, phones, emails, addresses, socials, origPhoneIds, origEmailIds, origAddressIds, origSocialIds]);
+      setOrigPhoneIds(new Set(snap.phones.filter((p) => p.id).map((p) => p.id!)));
+      setOrigEmailIds(new Set(snap.emails.filter((e) => e.id).map((e) => e.id!)));
+      setOrigAddressIds(new Set(snap.addresses.filter((a) => a.id).map((a) => a.id!)));
+      setOrigSocialIds(new Set(snap.socials.filter((s) => s.id).map((s) => s.id!)));
+    },
+  });
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Delete this contact?")) return;
@@ -412,7 +448,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
 
   const tabs = [
     { id: "info", label: "Info" },
-    ...(form.buyer_type ? [{ id: "grid", label: "Grid" }] : []),
+    ...(companyBuyerType ? [{ id: "grid", label: "Grid" }] : []),
     { id: "meetings", label: "Meetings" },
     { id: "calls", label: "Calls" },
     { id: "submissions", label: "Submissions" },
@@ -428,7 +464,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       <Breadcrumb fallbackHref="/contacts" fallbackLabel="Contacts" currentLabel={form.full_name || "Untitled"} />
 
       {/* Header */}
@@ -436,13 +472,13 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
         <h1 className="text-xl font-semibold tracking-tight text-black">
           {form.full_name || "Untitled Contact"}
         </h1>
-        <button
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-md bg-black px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-          >
-            {saving ? "Saving..." : saved ? "Saved \u2713" : "Save"}
-          </button>
+        <SavedIndicator
+          saving={autoSave.saving}
+          savedAt={autoSave.savedAt}
+          error={autoSave.error}
+          hasUndo={autoSave.hasUndo}
+          onUndo={autoSave.undo}
+        />
       </div>
 
       {/* Tabs */}
@@ -495,7 +531,10 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
                 <div className="flex-1">
                   <RelationPicker
                     value={form.company_id}
-                    onChange={(id) => setForm({ ...form, company_id: id })}
+                    onChange={(id) => {
+                      setForm({ ...form, company_id: id });
+                      setCompanyBuyerType(companies.find((c) => c.id === id)?.buyer_type || null);
+                    }}
                     options={companyOptions}
                     placeholder="Select company..."
                   />
@@ -519,7 +558,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
               />
             </Field>
           </div>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <Field label="Type">
               <Select
                 value={form.type || ""}
@@ -536,14 +575,6 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
                 placeholder="Select..."
               />
             </Field>
-            <Field label="Buyer Type">
-              <Select
-                value={form.buyer_type || ""}
-                onChange={(e) => setForm({ ...form, buyer_type: (e.target.value || null) as string | null })}
-                options={BUYER_TYPES}
-                placeholder="Not a buyer"
-              />
-            </Field>
           </div>
 
           <PhoneSection phones={phones} onChange={setPhones} />
@@ -551,7 +582,21 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
           <AddressSection addresses={addresses} onChange={setAddresses} />
           <SocialSection socials={socials} onChange={setSocials} />
 
-          <Field label="Assistant">
+          <Field label={
+            <span className="flex items-center gap-1.5">
+              Assistant
+              {form.assistant_id && (
+                <Link
+                  href={`/contacts/${form.assistant_id}`}
+                  className="inline-flex items-center gap-0.5 text-[11px] font-normal text-zinc-400 hover:text-black transition-colors"
+                  title="View full assistant record"
+                  prefetch
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </Link>
+              )}
+            </span>
+          }>
             <RelationPicker
               value={form.assistant_id}
               onChange={(id) => {
@@ -756,9 +801,9 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
                         {form.exec_level.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                       </span>
                     )}
-                    {form.buyer_type && (
+                    {companyBuyerType && (
                       <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                        {form.buyer_type}
+                        {companyBuyerType}
                       </span>
                     )}
                   </div>
@@ -777,15 +822,15 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                 {/* Met With */}
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50/30 p-4">
-                  <h4 className="text-sm font-semibold text-emerald-800 mb-3">
+                  <h4 className="text-base font-semibold text-emerald-800 mb-3">
                     Met With <span className="font-normal text-emerald-600">({gridMetWith.length})</span>
                   </h4>
                   {gridMetWith.length === 0 ? (
-                    <p className="text-xs text-emerald-600/60">No meetings with any clients yet.</p>
+                    <p className="text-sm text-emerald-600/60">No meetings with any clients yet.</p>
                   ) : (
                     <div className="space-y-1.5">
                       {gridMetWith.map((c) => (
-                        <div key={c.id} className="flex items-center justify-between text-xs">
+                        <div key={c.id} className="flex items-center justify-between text-sm">
                           <span className="font-medium text-emerald-900">{c.full_name}</span>
                           <span className="text-emerald-600">
                             {c.meetingCount} meeting{c.meetingCount !== 1 ? "s" : ""}
@@ -799,38 +844,38 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
 
                 {/* Not Yet Met */}
                 <div className="rounded-lg border border-zinc-200 bg-zinc-50/30 p-4">
-                  <h4 className="text-sm font-semibold text-zinc-700 mb-3">
+                  <h4 className="text-base font-semibold text-zinc-700 mb-3">
                     Not Yet Met <span className="font-normal text-zinc-500">({gridNotMet.length})</span>
                   </h4>
                   {gridNotMet.length === 0 ? (
-                    <p className="text-xs text-zinc-400">Met with all clients!</p>
+                    <p className="text-sm text-zinc-400">Met with all clients!</p>
                   ) : (
                     <div className="space-y-1">
                       {gridNotMet.map((c) => (
-                        <p key={c.id} className="text-xs text-zinc-600">{c.full_name}</p>
+                        <p key={c.id} className="text-sm text-zinc-600">{c.full_name}</p>
                       ))}
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Material Read */}
+              {/* Submissions */}
               <div className="rounded-lg border border-blue-200 bg-blue-50/30 p-4">
-                <h4 className="text-sm font-semibold text-blue-800 mb-3">
-                  Material Read <span className="font-normal text-blue-600">({gridMaterials.length})</span>
+                <h4 className="text-base font-semibold text-blue-800 mb-3">
+                  Submissions <span className="font-normal text-blue-600">({gridMaterials.length})</span>
                 </h4>
                 {gridMaterials.length === 0 ? (
-                  <p className="text-xs text-blue-600/60">No materials submitted to this contact yet.</p>
+                  <p className="text-sm text-blue-600/60">No materials submitted to this contact yet.</p>
                 ) : (
                   <div className="space-y-1.5">
                     {gridMaterials.map((m) => (
-                      <div key={m.id} className="flex items-center justify-between text-xs">
+                      <div key={m.id} className="flex items-center justify-between text-sm">
                         <div>
                           <span className="font-medium text-blue-900">{m.title}</span>
                           {m.client_name && <span className="ml-2 text-blue-600">({m.client_name})</span>}
                         </div>
                         {m.response ? (
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
                             m.response === "love" ? "bg-emerald-100 text-emerald-700" :
                             m.response === "like" ? "bg-blue-100 text-blue-700" :
                             m.response === "meh" ? "bg-amber-100 text-amber-700" :
@@ -839,7 +884,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
                             {m.response.charAt(0).toUpperCase() + m.response.slice(1)}
                           </span>
                         ) : (
-                          <span className="text-[10px] text-zinc-400">No response</span>
+                          <span className="text-xs text-zinc-400">No response</span>
                         )}
                       </div>
                     ))}

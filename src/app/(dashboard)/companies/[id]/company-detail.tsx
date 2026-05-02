@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Loader2, ExternalLink } from "lucide-react";
 import { Breadcrumb, buildFromParams } from "@/components/shared/breadcrumb";
 import { createClient } from "@/lib/supabase/client";
-import { Field, Input, Textarea } from "@/components/shared/detail-panel";
+import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
 import { MultiRelationPicker, type RelationOption } from "@/components/shared/relation-picker";
 import { formatPhone } from "@/lib/utils";
-import { usePicklist, toRelationOptions } from "@/lib/picklists";
+import { usePicklist, toRelationOptions, toSelectOptions } from "@/lib/picklists";
 import {
   PhoneSection,
   EmailSection,
@@ -25,6 +25,8 @@ import {
   type SocialRecord,
 } from "@/components/shared/contact-info-editor";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { SavedIndicator } from "@/components/shared/saved-indicator";
 
 interface PersonRow {
   id: string;
@@ -32,7 +34,6 @@ interface PersonRow {
   title: string | null;
   exec_level: string | null;
   department: string[];
-  buyer_type: string | null;
   primary_phone: string | null;
   primary_email: string | null;
 }
@@ -60,9 +61,9 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
   const COMPANY_OUTLETS = toRelationOptions(outletsItems);
   const departmentsItems = usePicklist("list_departments");
   const DEPARTMENTS = toRelationOptions(departmentsItems);
+  const buyerTypesItems = usePicklist("list_buyer_types");
+  const BUYER_TYPES = toSelectOptions(buyerTypesItems);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState("info");
 
@@ -72,6 +73,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
     outlet: [] as string[],
     department: [] as string[],
     phone: null as string | null,
+    buyer_type: null as string | null,
     notes: null as string | null,
   });
 
@@ -88,6 +90,13 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
   const [origAddressIds, setOrigAddressIds] = useState<Set<string>>(new Set());
   const [origSocialIds, setOrigSocialIds] = useState<Set<string>>(new Set());
 
+  // Grid tab state
+  const [gridLoading, setGridLoading] = useState(false);
+  const [gridLoaded, setGridLoaded] = useState(false);
+  const [gridMetWith, setGridMetWith] = useState<{ id: string; full_name: string; meetingCount: number; lastMeeting: string | null; metByPersons: string[] }[]>([]);
+  const [gridNotMet, setGridNotMet] = useState<{ id: string; full_name: string }[]>([]);
+  const [gridSubmissions, setGridSubmissions] = useState<{ id: string; title: string; client_name: string | null; response: string | null; person_name: string | null }[]>([]);
+
   useEffect(() => {
     async function load() {
       const [
@@ -102,7 +111,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
         supabase.from("companies").select("*").eq("id", companyId).single(),
         supabase
           .from("people")
-          .select("id, full_name, title, exec_level, department, buyer_type")
+          .select("id, full_name, title, exec_level, department")
           .eq("company_id", companyId)
           .order("full_name"),
         supabase
@@ -145,6 +154,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
         outlet: company.outlet || [],
         department: company.department || [],
         phone: company.phone,
+        buyer_type: company.buyer_type || null,
         notes: company.notes,
       });
 
@@ -226,29 +236,169 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
     load();
   }, [companyId]);
 
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    try {
-      await supabase.from("companies").update({ ...form }).eq("id", companyId);
+  // Grid tab data loader (only runs once when grid tab is opened)
+  useEffect(() => {
+    if (activeTab !== "grid" || gridLoaded || !form.buyer_type) return;
+    setGridLoading(true);
+    async function loadGrid() {
+      // 1. All clients
+      const { data: allClients } = await supabase.from("clients").select("id, full_name").order("full_name");
 
-      await Promise.all([
-        syncPhones("company" as "person", companyId, phones, origPhoneIds),
-        syncEmails("company" as "person", companyId, emails, origEmailIds),
-        syncAddresses("company" as "person", companyId, addresses, origAddressIds),
-        syncSocials("company" as "client", companyId, socials, origSocialIds),
-      ]);
+      // 2. People at this company
+      const personIds = people.map((p) => p.id);
+      const personNameById = new Map(people.map((p) => [p.id, p.full_name]));
 
-      setOrigPhoneIds(new Set(phones.filter((p) => p.id).map((p) => p.id!)));
-      setOrigEmailIds(new Set(emails.filter((e) => e.id).map((e) => e.id!)));
-      setOrigAddressIds(new Set(addresses.filter((a) => a.id).map((a) => a.id!)));
-      setOrigSocialIds(new Set(socials.filter((s) => s.id).map((s) => s.id!)));
+      // 3. Meeting attendance for those people (meeting_id, person_id, meeting_at)
+      let metClientMap: Record<string, { count: number; lastDate: string | null; metByPersonIds: Set<string> }> = {};
+      if (personIds.length > 0) {
+        const { data: mp } = await supabase
+          .from("meeting_people")
+          .select("meeting_id, person_id, meeting:meetings(meeting_at)")
+          .in("person_id", personIds);
+        const meetingPersonRows = (mp || []) as unknown as { meeting_id: string; person_id: string; meeting: { meeting_at: string | null } | null }[];
+        const meetingIds = [...new Set(meetingPersonRows.map((r) => r.meeting_id))];
 
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    } finally {
-      setSaving(false);
+        if (meetingIds.length > 0) {
+          // 4. Clients on those meetings
+          const { data: mc } = await supabase
+            .from("meeting_clients")
+            .select("meeting_id, client_id")
+            .in("meeting_id", meetingIds);
+          const meetingClientRows = (mc || []) as { meeting_id: string; client_id: string }[];
+
+          // Build lookup: meeting_id -> meeting_at, meeting_id -> [person_ids]
+          const meetingAt = new Map<string, string | null>();
+          const meetingPeople = new Map<string, Set<string>>();
+          for (const r of meetingPersonRows) {
+            meetingAt.set(r.meeting_id, r.meeting?.meeting_at || null);
+            if (!meetingPeople.has(r.meeting_id)) meetingPeople.set(r.meeting_id, new Set());
+            meetingPeople.get(r.meeting_id)!.add(r.person_id);
+          }
+
+          // 5. Aggregate per client
+          for (const r of meetingClientRows) {
+            if (!metClientMap[r.client_id]) {
+              metClientMap[r.client_id] = { count: 0, lastDate: null, metByPersonIds: new Set() };
+            }
+            metClientMap[r.client_id].count++;
+            const at = meetingAt.get(r.meeting_id) || null;
+            if (at && (!metClientMap[r.client_id].lastDate || at > metClientMap[r.client_id].lastDate!)) {
+              metClientMap[r.client_id].lastDate = at;
+            }
+            const peopleOnMeeting = meetingPeople.get(r.meeting_id);
+            if (peopleOnMeeting) {
+              for (const pid of peopleOnMeeting) metClientMap[r.client_id].metByPersonIds.add(pid);
+            }
+          }
+        }
+      }
+
+      const clientNameById = new Map((allClients || []).map((c) => [c.id, c.full_name]));
+      const met = Object.entries(metClientMap).map(([id, data]) => ({
+        id,
+        full_name: clientNameById.get(id) || "Unknown",
+        meetingCount: data.count,
+        lastMeeting: data.lastDate,
+        metByPersons: [...data.metByPersonIds]
+          .map((pid) => personNameById.get(pid) || "")
+          .filter(Boolean)
+          .sort(),
+      })).sort((a, b) => a.full_name.localeCompare(b.full_name));
+      const metIds = new Set(Object.keys(metClientMap));
+      const notMet = (allClients || []).filter((c) => !metIds.has(c.id)).map((c) => ({ id: c.id, full_name: c.full_name }));
+
+      setGridMetWith(met);
+      setGridNotMet(notMet);
+
+      // 6. Submissions: any submission_item where person_id is at this company
+      let subs: typeof gridSubmissions = [];
+      if (personIds.length > 0) {
+        const { data: subItems } = await supabase
+          .from("submission_items")
+          .select("response, person_id, material:client_materials!material_id(id, title, client:clients!client_id(full_name))")
+          .in("person_id", personIds)
+          .not("material_id", "is", null);
+        const seen = new Set<string>();
+        for (const item of (subItems || [])) {
+          const mat = (item as Record<string, unknown>).material as { id: string; title: string; client: { full_name: string } | null } | null;
+          if (mat && !seen.has(mat.id)) {
+            seen.add(mat.id);
+            subs.push({
+              id: mat.id,
+              title: mat.title,
+              client_name: mat.client?.full_name || null,
+              response: (item as { response: string | null }).response || null,
+              person_name: personNameById.get((item as { person_id: string }).person_id) || null,
+            });
+          }
+        }
+      }
+      setGridSubmissions(subs);
+
+      setGridLoading(false);
+      setGridLoaded(true);
     }
-  }, [form, companyId, supabase, phones, emails, addresses, socials, origPhoneIds, origEmailIds, origAddressIds, origSocialIds]);
+    loadGrid();
+  }, [activeTab, gridLoaded, form.buyer_type, people, supabase]);
+
+  type CompanyAutoSaveSnapshot = {
+    form: typeof form;
+    phones: PhoneRecord[];
+    emails: EmailRecord[];
+    addresses: AddressRecord[];
+    socials: SocialRecord[];
+  };
+
+  const autoSaveState: CompanyAutoSaveSnapshot = useMemo(
+    () => ({ form, phones, emails, addresses, socials }),
+    [form, phones, emails, addresses, socials]
+  );
+
+  const autoSaveRestore = useCallback(
+    (snap: unknown) => {
+      const s = snap as Partial<CompanyAutoSaveSnapshot> & Record<string, unknown>;
+      if (s && typeof s === "object" && "form" in s && s.form) {
+        setForm(s.form as typeof form);
+        if (s.phones) setPhones(s.phones as PhoneRecord[]);
+        if (s.emails) setEmails(s.emails as EmailRecord[]);
+        if (s.addresses) setAddresses(s.addresses as AddressRecord[]);
+        if (s.socials) setSocials(s.socials as SocialRecord[]);
+      } else if (s && typeof s === "object") {
+        const row = s as Record<string, unknown>;
+        setForm({
+          name: (row.name as string) ?? "",
+          types: (row.types as string[] | null) ?? [],
+          outlet: (row.outlet as string[] | null) ?? [],
+          department: (row.department as string[] | null) ?? [],
+          phone: (row.phone as string | null) ?? null,
+          buyer_type: (row.buyer_type as string | null) ?? null,
+          notes: (row.notes as string | null) ?? null,
+        });
+      }
+    },
+    []
+  );
+
+  const autoSave = useAutoSave<CompanyAutoSaveSnapshot>({
+    recordId: companyId,
+    tableName: "companies",
+    state: autoSaveState,
+    restore: autoSaveRestore,
+    enabled: !loading,
+    save: async (snap) => {
+      await supabase.from("companies").update({ ...snap.form }).eq("id", companyId);
+      await Promise.all([
+        syncPhones("company" as "person", companyId, snap.phones, origPhoneIds),
+        syncEmails("company" as "person", companyId, snap.emails, origEmailIds),
+        syncAddresses("company" as "person", companyId, snap.addresses, origAddressIds),
+        syncSocials("company" as "client", companyId, snap.socials, origSocialIds),
+      ]);
+      setOrigPhoneIds(new Set(snap.phones.filter((p) => p.id).map((p) => p.id!)));
+      setOrigEmailIds(new Set(snap.emails.filter((e) => e.id).map((e) => e.id!)));
+      setOrigAddressIds(new Set(snap.addresses.filter((a) => a.id).map((a) => a.id!)));
+      setOrigSocialIds(new Set(snap.socials.filter((s) => s.id).map((s) => s.id!)));
+    },
+  });
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Delete this company? People linked to it will lose their company association.")) return;
@@ -263,6 +413,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
 
   const tabs = [
     { id: "info", label: "Info" },
+    ...(form.buyer_type ? [{ id: "grid", label: "Grid" }] : []),
     { id: "people", label: "People" },
     { id: "projects", label: "Projects" },
   ];
@@ -276,7 +427,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       <Breadcrumb fallbackHref="/companies" fallbackLabel="Companies" currentLabel={form.name || "Untitled"} />
 
       {/* Header */}
@@ -284,13 +435,13 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
         <h1 className="text-xl font-semibold tracking-tight text-black">
           {form.name || "Untitled Company"}
         </h1>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="rounded-md bg-black px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-        >
-          {saving ? "Saving..." : saved ? "Saved \u2713" : "Save"}
-        </button>
+        <SavedIndicator
+          saving={autoSave.saving}
+          savedAt={autoSave.savedAt}
+          error={autoSave.error}
+          hasUndo={autoSave.hasUndo}
+          onUndo={autoSave.undo}
+        />
       </div>
 
       {/* Tabs */}
@@ -321,7 +472,15 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
             />
           </Field>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-4 gap-3">
+            <Field label="Buyer Type">
+              <Select
+                value={form.buyer_type || ""}
+                onChange={(e) => setForm({ ...form, buyer_type: (e.target.value || null) as string | null })}
+                options={BUYER_TYPES}
+                placeholder="Not a buyer"
+              />
+            </Field>
             <Field label="Types">
               <MultiRelationPicker
                 value={form.types}
@@ -418,9 +577,9 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
                           : "\u2014"}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
-                        {person.buyer_type ? (
+                        {form.buyer_type ? (
                           <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                            {person.buyer_type}
+                            {form.buyer_type}
                           </span>
                         ) : "\u2014"}
                       </td>
@@ -493,6 +652,158 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
                 </tbody>
               </table>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Grid Tab */}
+      {activeTab === "grid" && (
+        <div>
+          {gridLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+            </div>
+          ) : (
+            <>
+              {/* Company summary card */}
+              {(() => {
+                const primaryPhone = phones.find((p) => p.is_primary)?.number || phones[0]?.number || null;
+                const primaryEmail = emails.find((e) => e.is_primary)?.address || emails[0]?.address || null;
+                const primaryAddr = addresses.find((a) => a.is_primary) || addresses[0] || null;
+                const addrLine = primaryAddr
+                  ? [primaryAddr.street, [primaryAddr.city, primaryAddr.state].filter(Boolean).join(", "), primaryAddr.zip, primaryAddr.country !== "USA" ? primaryAddr.country : ""]
+                      .filter(Boolean)
+                      .join(", ")
+                  : null;
+                const hasAnyContactInfo = primaryPhone || primaryEmail || addrLine || socials.length > 0;
+                return (
+                  <div className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-4 mb-6">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-lg font-semibold text-black">{form.name}</h3>
+                        {form.types.length > 0 && (
+                          <p className="text-sm text-zinc-600">
+                            {form.types.map((t) => t.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())).join(", ")}
+                          </p>
+                        )}
+                        <div className="mt-2 space-y-1 text-sm text-zinc-600">
+                          {primaryPhone && <div>{formatPhone(primaryPhone)}</div>}
+                          {primaryEmail && <div>{primaryEmail}</div>}
+                          {addrLine && <div>{addrLine}</div>}
+                          {socials.length > 0 && (
+                            <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                              {socials.map((s) => (
+                                <a
+                                  key={s.id || s.url}
+                                  href={s.url.startsWith("http") ? s.url : `https://${s.url}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-zinc-600 hover:text-black hover:underline"
+                                >
+                                  {s.platform}
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                          {!hasAnyContactInfo && (
+                            <div className="text-zinc-400 italic">No contact info on file.</div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
+                        {form.buyer_type && (
+                          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
+                            {form.buyer_type}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Met With / Not Met */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                {/* Met With */}
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50/30 p-4">
+                  <h4 className="text-base font-semibold text-emerald-800 mb-3">
+                    Met With <span className="font-normal text-emerald-600">({gridMetWith.length})</span>
+                  </h4>
+                  {gridMetWith.length === 0 ? (
+                    <p className="text-sm text-emerald-600/60">No meetings with any clients yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {gridMetWith.map((c) => (
+                        <div key={c.id} className="text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-emerald-900">{c.full_name}</span>
+                            <span className="text-emerald-600">
+                              {c.meetingCount} meeting{c.meetingCount !== 1 ? "s" : ""}
+                              {c.lastMeeting && ` · ${new Date(c.lastMeeting).toLocaleDateString()}`}
+                            </span>
+                          </div>
+                          {c.metByPersons.length > 0 && (
+                            <div className="text-xs text-emerald-700/70 mt-0.5">
+                              met by: {c.metByPersons.join(", ")}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Not Yet Met */}
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50/30 p-4">
+                  <h4 className="text-base font-semibold text-zinc-700 mb-3">
+                    Not Yet Met <span className="font-normal text-zinc-500">({gridNotMet.length})</span>
+                  </h4>
+                  {gridNotMet.length === 0 ? (
+                    <p className="text-sm text-zinc-400">Met with all clients!</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {gridNotMet.map((c) => (
+                        <p key={c.id} className="text-sm text-zinc-600">{c.full_name}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Submissions */}
+              <div className="rounded-lg border border-blue-200 bg-blue-50/30 p-4">
+                <h4 className="text-base font-semibold text-blue-800 mb-3">
+                  Submissions <span className="font-normal text-blue-600">({gridSubmissions.length})</span>
+                </h4>
+                {gridSubmissions.length === 0 ? (
+                  <p className="text-sm text-blue-600/60">No materials submitted to anyone at this company yet.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {gridSubmissions.map((m) => (
+                      <div key={m.id} className="flex items-center justify-between text-sm">
+                        <div>
+                          <span className="font-medium text-blue-900">{m.title}</span>
+                          {m.client_name && <span className="ml-2 text-blue-600">({m.client_name})</span>}
+                          {m.person_name && <span className="ml-2 text-blue-700/70">→ {m.person_name}</span>}
+                        </div>
+                        {m.response ? (
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                            m.response === "love" ? "bg-emerald-100 text-emerald-700" :
+                            m.response === "like" ? "bg-blue-100 text-blue-700" :
+                            m.response === "meh" ? "bg-amber-100 text-amber-700" :
+                            "bg-red-100 text-red-700"
+                          }`}>
+                            {m.response.charAt(0).toUpperCase() + m.response.slice(1)}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-zinc-400">No response</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}

@@ -96,7 +96,7 @@ export function SubmissionsClient({ userId }: SubmissionsClientProps) {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold tracking-tight text-black">Submissions</h1>

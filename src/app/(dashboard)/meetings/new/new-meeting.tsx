@@ -151,7 +151,7 @@ export function NewMeeting({ userId }: NewMeetingProps) {
   }, [form, supabase, clientOptions, personOptions, router]);
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       {/* Back link */}
       <Link
         href="/meetings"

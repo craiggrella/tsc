@@ -25,7 +25,7 @@ import {
   Select,
   Textarea,
 } from "@/components/shared/detail-panel";
-import { cn, formatPhone } from "@/lib/utils";
+import { cn, formatPhone, formatUSPhoneInput } from "@/lib/utils";
 import type { CallStatus } from "@/types/database";
 
 // ─── Types ──────────────────────────────────────────
@@ -73,7 +73,7 @@ interface CallRow {
   client_id: string | null;
   user_id: string;
   call_status: CallStatus;
-  priority: "high" | "medium" | "low" | null;
+  subject: string | null;
   preferred_phone: string | null;
   phone_custom: string | null;
   quick_connect: boolean;
@@ -93,21 +93,14 @@ interface CallLogClientProps {
 // ─── Constants ──────────────────────────────────────
 
 const CALL_STATUSES: { value: CallStatus; label: string }[] = [
-  { value: "to_call", label: "To Call" },
   { value: "incoming", label: "Incoming" },
-  { value: "left_word", label: "Left Word" },
   { value: "returning", label: "Returning" },
+  { value: "left_word", label: "Left Word" },
+  { value: "to_call", label: "To Call" },
   { value: "completed", label: "Completed" },
 ];
 
-const PRIORITIES = [
-  { value: "high", label: "High" },
-  { value: "medium", label: "Medium" },
-  { value: "low", label: "Low" },
-];
-
-
-type SortField = "due_date" | "log_time" | "priority" | "call_status";
+type SortField = "due_date" | "log_time" | "call_status";
 
 function nowLocal() {
   const d = new Date();
@@ -121,7 +114,7 @@ const emptyCall = {
   contact_type: null as "person" | "client" | null,
   user_id: null as string | null,
   call_status: "to_call" as CallStatus,
-  priority: null as "high" | "medium" | "low" | null,
+  subject: null as string | null,
   preferred_phone: null as string | null,
   phone_custom: null as string | null,
   log_time: null as string | null,
@@ -164,7 +157,6 @@ export function CallLogClient({ userId }: CallLogClientProps) {
 
   // Filters — default to "open" (everything except completed) + current user
   const [statusFilter, setStatusFilter] = useState<CallStatus | "open" | "">("open");
-  const [priorityFilter, setPriorityFilter] = useState<string>("");
   const [teamFilter, setTeamFilter] = useState<string>(userId);
 
   // Sorting
@@ -279,6 +271,11 @@ export function CallLogClient({ userId }: CallLogClientProps) {
         label: p.full_name,
         sublabel: p.role,
       })),
+    [profiles]
+  );
+
+  const profileNames: Record<string, string> = useMemo(
+    () => Object.fromEntries(profiles.map((p) => [p.id, p.full_name])),
     [profiles]
   );
 
@@ -432,16 +429,10 @@ export function CallLogClient({ userId }: CallLogClientProps) {
     if (teamFilter) list = list.filter((c) => c.user_id === teamFilter);
     if (statusFilter === "open") list = list.filter((c) => c.call_status !== "completed");
     else if (statusFilter) list = list.filter((c) => c.call_status === statusFilter);
-    if (priorityFilter) list = list.filter((c) => c.priority === priorityFilter);
 
     list.sort((a, b) => {
       let cmp = 0;
-      if (sortField === "priority") {
-        const order = { high: 0, medium: 1, low: 2 };
-        const aVal = a.priority ? order[a.priority] : 3;
-        const bVal = b.priority ? order[b.priority] : 3;
-        cmp = aVal - bVal;
-      } else if (sortField === "due_date" || sortField === "log_time") {
+      if (sortField === "due_date" || sortField === "log_time") {
         const aVal = sortField === "log_time" ? (a.updated_at || "") : (a[sortField] || "");
         const bVal = sortField === "log_time" ? (b.updated_at || "") : (b[sortField] || "");
         cmp = aVal.localeCompare(bVal);
@@ -452,7 +443,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
     });
 
     return list;
-  }, [calls, statusFilter, priorityFilter, sortField, sortAsc]);
+  }, [calls, statusFilter, sortField, sortAsc]);
 
   // ─── Handlers ───────────────────────────────────
 
@@ -472,7 +463,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
       contact_type: contactType,
       user_id: call.user_id,
       call_status: call.call_status,
-      priority: call.priority,
+      subject: call.subject,
       preferred_phone: call.preferred_phone,
       phone_custom: call.phone_custom,
       log_time: call.log_time,
@@ -498,7 +489,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
         contact_id: form.contact_id,
         client_id: form.client_id,
         call_status: form.call_status,
-        priority: form.priority,
+        subject: form.subject || null,
         preferred_phone: form.preferred_phone === "new" ? null : form.preferred_phone,
         phone_custom: null,
         quick_connect: false,
@@ -713,18 +704,6 @@ export function CallLogClient({ userId }: CallLogClientProps) {
           ))}
         </select>
         <select
-          value={priorityFilter}
-          onChange={(e) => setPriorityFilter(e.target.value)}
-          className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 outline-none hover:border-zinc-300"
-        >
-          <option value="">All Priorities</option>
-          {PRIORITIES.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-        <select
           value={teamFilter}
           onChange={(e) => setTeamFilter(e.target.value)}
           className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 outline-none hover:border-zinc-300"
@@ -737,11 +716,10 @@ export function CallLogClient({ userId }: CallLogClientProps) {
             </option>
           ))}
         </select>
-        {(statusFilter || priorityFilter || teamFilter) && (
+        {(statusFilter || teamFilter) && (
           <button
             onClick={() => {
               setStatusFilter("");
-              setPriorityFilter("");
               setTeamFilter("");
             }}
             className="text-xs text-zinc-400 hover:text-zinc-600"
@@ -794,7 +772,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
 
       {/* Table */}
       <div className="mt-3 overflow-x-auto rounded-lg border border-zinc-200">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="w-full min-w-[1100px] text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
               <th className="w-10 px-3 py-2.5">
@@ -808,6 +786,12 @@ export function CallLogClient({ userId }: CallLogClientProps) {
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
                 Contact
               </th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap min-w-[280px]">
+                Subject
+              </th>
+              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
+                Call to/for
+              </th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
                 Re: Client
               </th>
@@ -817,15 +801,6 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                   className="inline-flex items-center gap-1 hover:text-black transition-colors"
                 >
                   Status
-                  <ArrowUpDown className="h-3 w-3" />
-                </button>
-              </th>
-              <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500 whitespace-nowrap">
-                <button
-                  onClick={() => toggleSort("priority")}
-                  className="inline-flex items-center gap-1 hover:text-black transition-colors"
-                >
-                  Priority
                   <ArrowUpDown className="h-3 w-3" />
                 </button>
               </th>
@@ -859,7 +834,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
             {filteredCalls.length === 0 ? (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={9}
                   className="px-3 py-12 text-center text-sm text-zinc-400"
                 >
                   <Phone className="mx-auto mb-2 h-8 w-8 text-zinc-300" />
@@ -890,6 +865,12 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                       <span className="ml-1 text-[10px] text-amber-600 font-medium">Client</span>
                     )}
                   </td>
+                  <td className="px-3 py-2.5 text-zinc-700 min-w-[280px] max-w-[420px] truncate" title={call.subject || ""}>
+                    {call.subject || "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-zinc-700 whitespace-nowrap">
+                    {profileNames[call.user_id] || "—"}
+                  </td>
                   <td className="px-3 py-2.5 text-zinc-700 whitespace-nowrap">
                     {call.client?.full_name || "—"}
                   </td>
@@ -899,21 +880,18 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                       onChange={(s) => quickStatusChange(call.id, s)}
                     />
                   </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap">
-                    <StatusBadge status={call.priority} />
-                  </td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
+                  <td className="px-3 py-2.5 text-zinc-500 whitespace-nowrap">
                     {getPhoneDisplay(call)}
                   </td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
+                  <td className="px-3 py-2.5 text-zinc-500 whitespace-nowrap">
                     {call.contact_id && tableEmails[call.contact_id] ? tableEmails[call.contact_id] : "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
+                  <td className="px-3 py-2.5 text-zinc-500 whitespace-nowrap">
                     {call.due_date
                       ? new Date(call.due_date).toLocaleDateString()
                       : "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-zinc-500 text-xs whitespace-nowrap">
+                  <td className="px-3 py-2.5 text-zinc-500 whitespace-nowrap">
                     {call.updated_at
                       ? new Date(call.updated_at).toLocaleString([], {
                           month: "short",
@@ -973,7 +951,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
               Contact
               {form.contact_id && selectedContact && (
                 <Link
-                  href={`/contacts?open=${selectedContact.id}`}
+                  href={`/contacts/${selectedContact.id}`}
                   className="inline-flex items-center gap-0.5 text-[11px] font-normal text-zinc-400 hover:text-black transition-colors"
                   title="View full contact record"
                   prefetch
@@ -1085,14 +1063,28 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                       onChange={(e) => setNewPhones((prev) => prev.map((p, j) => j === i ? { ...p, designation: e.target.value } : p))}
                       className="rounded border border-zinc-200 bg-white px-2 py-1 text-xs outline-none"
                     >
-                      {["Cell", "Office", "Home", "Assistant", "Fax", "Other"].map((d) => (
+                      {["Cell", "Office", "Home", "Assistant", "Fax", "INTL", "Other"].map((d) => (
                         <option key={d} value={d}>{d}</option>
                       ))}
                     </select>
                     <input
-                      value={np.number}
-                      onChange={(e) => setNewPhones((prev) => prev.map((p, j) => j === i ? { ...p, number: e.target.value } : p))}
-                      placeholder="Phone number"
+                      value={np.designation === "INTL" ? np.number : formatUSPhoneInput(np.number)}
+                      onChange={(e) =>
+                        setNewPhones((prev) =>
+                          prev.map((p, j) =>
+                            j === i
+                              ? {
+                                  ...p,
+                                  number:
+                                    p.designation === "INTL"
+                                      ? e.target.value
+                                      : formatUSPhoneInput(e.target.value),
+                                }
+                              : p
+                          )
+                        )
+                      }
+                      placeholder={np.designation === "INTL" ? "+44 20 7946 0958" : "412-444-8675"}
                       className="flex-1 rounded border border-zinc-200 bg-white px-2 py-1 text-xs outline-none"
                       autoFocus={i === newPhones.length - 1}
                     />
@@ -1119,34 +1111,39 @@ export function CallLogClient({ userId }: CallLogClientProps) {
             </Field>
           )}
 
-          {/* Status & Priority */}
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Status">
-              <Select
-                value={form.call_status}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    call_status: e.target.value as CallStatus,
-                  })
-                }
-                options={CALL_STATUSES}
-              />
-            </Field>
-            <Field label="Priority">
-              <Select
-                value={form.priority || ""}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    priority: (e.target.value || null) as "high" | "medium" | "low" | null,
-                  })
-                }
-                options={PRIORITIES}
-                placeholder="None"
-              />
-            </Field>
-          </div>
+          {/* Subject */}
+          <Field label="Subject">
+            <Input
+              type="text"
+              value={form.subject || ""}
+              onChange={(e) => setForm({ ...form, subject: e.target.value || null })}
+              placeholder="What's this call about?"
+            />
+          </Field>
+
+          {/* Call to/for */}
+          <Field label="Call to/for">
+            <RelationPicker
+              value={form.user_id}
+              onChange={(id) => setForm({ ...form, user_id: id })}
+              options={profileOptions}
+              placeholder="Select team member..."
+            />
+          </Field>
+
+          {/* Status */}
+          <Field label="Status">
+            <Select
+              value={form.call_status}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  call_status: e.target.value as CallStatus,
+                })
+              }
+              options={CALL_STATUSES}
+            />
+          </Field>
 
           {/* Re: Client — auto-filled when a client is the caller */}
           <Field label="Re: Client">
@@ -1163,16 +1160,6 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                 placeholder="Select client..."
               />
             )}
-          </Field>
-
-          {/* Who Makes the Call */}
-          <Field label="Who Makes the Call">
-            <RelationPicker
-              value={form.user_id}
-              onChange={(id) => setForm({ ...form, user_id: id })}
-              options={profileOptions}
-              placeholder="Select team member..."
-            />
           </Field>
 
           {/* Due Date & Log Time */}
@@ -1278,10 +1265,10 @@ function StatusDropdown({
           <div className="absolute left-0 z-40 mt-1 w-36 rounded-md border border-zinc-200 bg-white py-1 shadow-lg">
             {(
               [
-                "to_call",
                 "incoming",
-                "left_word",
                 "returning",
+                "left_word",
+                "to_call",
                 "completed",
               ] as CallStatus[]
             ).map((s) => (

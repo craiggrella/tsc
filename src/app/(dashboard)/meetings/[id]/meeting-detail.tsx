@@ -14,6 +14,8 @@ import {
 import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
 import type { MeetingStatus } from "@/types/database";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { SavedIndicator } from "@/components/shared/saved-indicator";
 
 const MEETING_STATUSES: { value: MeetingStatus; label: string }[] = [
   { value: "need_to_set", label: "Need to Set" },
@@ -48,8 +50,6 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const [clients, setClients] = useState<{ id: string; full_name: string }[]>([]);
@@ -188,28 +188,50 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
     return { id: data.id, label: data.name };
   }, [supabase]);
 
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    try {
-      // Auto-generate title from clients + people
-      const clientNames = form.client_ids.map((id) => clientOptions.find((c) => c.id === id)?.label).filter(Boolean);
-      const personNames = form.person_ids.map((id) => personOptions.find((p) => p.id === id)?.label).filter(Boolean);
+  const autoSaveRestore = useCallback((snap: unknown) => {
+    const s = snap as Partial<{ form: typeof emptyForm }> & Record<string, unknown>;
+    if (s && typeof s === "object" && "form" in s && s.form) {
+      setForm(s.form as typeof emptyForm);
+    } else if (s && typeof s === "object") {
+      const row = s as Record<string, unknown>;
+      setForm((prev) => ({
+        ...prev,
+        title: (row.title as string) ?? "",
+        meeting_status: (row.meeting_status as MeetingStatus) ?? "need_to_set",
+        meeting_at: (row.meeting_at as string | null) ?? null,
+        location_link: (row.location_link as string | null) ?? null,
+        location_type: (row.location_type as string | null) ?? null,
+        virtual_info: (row.virtual_info as string | null) ?? null,
+        meeting_address: (row.meeting_address as string | null) ?? null,
+        notes: (row.notes as string | null) ?? null,
+      }));
+    }
+  }, []);
+
+  const autoSave = useAutoSave<{ form: typeof emptyForm }>({
+    recordId: meetingId,
+    tableName: "meetings",
+    state: useMemo(() => ({ form }), [form]),
+    restore: autoSaveRestore,
+    enabled: !loading,
+    save: async (snap) => {
+      const clientNames = snap.form.client_ids.map((id) => clientOptions.find((c) => c.id === id)?.label).filter(Boolean);
+      const personNames = snap.form.person_ids.map((id) => personOptions.find((p) => p.id === id)?.label).filter(Boolean);
       const autoTitle = [clientNames.join(", "), personNames.join(", ")].filter(Boolean).join(" \u2014 ") || "Meeting";
 
       const payload = {
         title: autoTitle,
-        meeting_status: form.meeting_status,
-        meeting_at: form.meeting_at || null,
-        location_link: form.location_link || null,
-        location_type: form.location_type || null,
-        virtual_info: form.virtual_info || null,
-        meeting_address: form.meeting_address || null,
-        notes: form.notes || null,
+        meeting_status: snap.form.meeting_status,
+        meeting_at: snap.form.meeting_at || null,
+        location_link: snap.form.location_link || null,
+        location_type: snap.form.location_type || null,
+        virtual_info: snap.form.virtual_info || null,
+        meeting_address: snap.form.meeting_address || null,
+        notes: snap.form.notes || null,
       };
 
       await supabase.from("meetings").update(payload).eq("id", meetingId);
 
-      // Sync join tables
       await Promise.all([
         supabase.from("meeting_clients").delete().eq("meeting_id", meetingId),
         supabase.from("meeting_people").delete().eq("meeting_id", meetingId),
@@ -217,34 +239,21 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
         supabase.from("meeting_attendees").delete().eq("meeting_id", meetingId),
       ]);
       await Promise.all([
-        form.client_ids.length > 0
-          ? supabase.from("meeting_clients").insert(
-              form.client_ids.map((id) => ({ meeting_id: meetingId, client_id: id }))
-            )
+        snap.form.client_ids.length > 0
+          ? supabase.from("meeting_clients").insert(snap.form.client_ids.map((id) => ({ meeting_id: meetingId, client_id: id })))
           : Promise.resolve(),
-        form.person_ids.length > 0
-          ? supabase.from("meeting_people").insert(
-              form.person_ids.map((id) => ({ meeting_id: meetingId, person_id: id }))
-            )
+        snap.form.person_ids.length > 0
+          ? supabase.from("meeting_people").insert(snap.form.person_ids.map((id) => ({ meeting_id: meetingId, person_id: id })))
           : Promise.resolve(),
-        form.project_ids.length > 0
-          ? supabase.from("meeting_projects").insert(
-              form.project_ids.map((id) => ({ meeting_id: meetingId, project_id: id }))
-            )
+        snap.form.project_ids.length > 0
+          ? supabase.from("meeting_projects").insert(snap.form.project_ids.map((id) => ({ meeting_id: meetingId, project_id: id })))
           : Promise.resolve(),
-        form.attendee_ids.length > 0
-          ? supabase.from("meeting_attendees").insert(
-              form.attendee_ids.map((id) => ({ meeting_id: meetingId, profile_id: id }))
-            )
+        snap.form.attendee_ids.length > 0
+          ? supabase.from("meeting_attendees").insert(snap.form.attendee_ids.map((id) => ({ meeting_id: meetingId, profile_id: id })))
           : Promise.resolve(),
       ]);
-
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    } finally {
-      setSaving(false);
-    }
-  }, [form, meetingId, supabase, clientOptions, personOptions]);
+    },
+  });
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Delete this meeting?")) return;
@@ -266,7 +275,7 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       <Breadcrumb fallbackHref="/meetings" fallbackLabel="Meetings" currentLabel={form.title || "Untitled"} />
 
       {/* Linked Submission Context */}
@@ -316,13 +325,13 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
         <h1 className="text-xl font-semibold tracking-tight text-black">
           {form.title || "Untitled Meeting"}
         </h1>
-        <button
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-md bg-black px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-          >
-            {saving ? "Saving..." : saved ? "Saved \u2713" : "Save"}
-          </button>
+        <SavedIndicator
+          saving={autoSave.saving}
+          savedAt={autoSave.savedAt}
+          error={autoSave.error}
+          hasUndo={autoSave.hasUndo}
+          onUndo={autoSave.undo}
+        />
       </div>
 
       {/* Form */}

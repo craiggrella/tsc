@@ -93,7 +93,7 @@ export function NewClient({ userId }: NewClientProps) {
   }, [form, supabase, phones, emails, addresses, socials, router]);
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       {/* Back link */}
       <Link
         href="/clients"

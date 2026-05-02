@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { User, Users, HardDrive, List, Check, Plus, ChevronDown, ChevronRight, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,8 @@ import {
   type AddressRecord,
 } from "@/components/shared/contact-info-editor";
 import { PICKLIST_TABLES, invalidatePicklistCache } from "@/lib/picklists";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { SavedIndicator } from "@/components/shared/saved-indicator";
 
 interface PicklistRow {
   id: string;
@@ -81,8 +83,6 @@ export function SettingsClient({ userId }: SettingsClientProps) {
   const [origProfilePhoneIds, setOrigProfilePhoneIds] = useState<Set<string>>(new Set());
   const [origProfileEmailIds, setOrigProfileEmailIds] = useState<Set<string>>(new Set());
   const [origProfileAddressIds, setOrigProfileAddressIds] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
 
   // Password form
   const [newPassword, setNewPassword] = useState("");
@@ -247,34 +247,59 @@ export function SettingsClient({ userId }: SettingsClientProps) {
     load();
   }, []);
 
-  // ── Profile save ──
-  async function handleSaveProfile() {
-    if (!myProfile) return;
-    setSaving(true);
-    setSaved(false);
+  // ── Profile auto-save ──
+  type ProfileAutoSaveSnapshot = {
+    firstName: string;
+    lastName: string;
+    profilePhones: PhoneRecord[];
+    profileEmails: EmailRecord[];
+    profileAddresses: AddressRecord[];
+  };
 
-    const full_name = [firstName, lastName].filter(Boolean).join(" ");
-    await supabase
-      .from("profiles")
-      .update({ first_name: firstName || null, last_name: lastName || null, full_name })
-      .eq("id", myProfile.id);
+  const profileAutoSaveState: ProfileAutoSaveSnapshot = useMemo(
+    () => ({ firstName, lastName, profilePhones, profileEmails, profileAddresses }),
+    [firstName, lastName, profilePhones, profileEmails, profileAddresses]
+  );
 
-    await Promise.all([
-      syncPhones("profile", myProfile.id, profilePhones, origProfilePhoneIds),
-      syncEmails("profile", myProfile.id, profileEmails, origProfileEmailIds),
-      syncAddresses("profile", myProfile.id, profileAddresses, origProfileAddressIds),
-    ]);
+  const profileAutoSaveRestore = useCallback((snap: unknown) => {
+    const s = snap as Partial<ProfileAutoSaveSnapshot> & Record<string, unknown>;
+    if (s && typeof s === "object" && "firstName" in s) {
+      setFirstName((s.firstName as string) ?? "");
+      setLastName((s.lastName as string) ?? "");
+      if (s.profilePhones) setProfilePhones(s.profilePhones as PhoneRecord[]);
+      if (s.profileEmails) setProfileEmails(s.profileEmails as EmailRecord[]);
+      if (s.profileAddresses) setProfileAddresses(s.profileAddresses as AddressRecord[]);
+    } else if (s && typeof s === "object") {
+      const row = s as Record<string, unknown>;
+      setFirstName((row.first_name as string) ?? "");
+      setLastName((row.last_name as string) ?? "");
+    }
+  }, []);
 
-    // Refresh orig IDs
-    setOrigProfilePhoneIds(new Set(profilePhones.filter((p) => p.id).map((p) => p.id!)));
-    setOrigProfileEmailIds(new Set(profileEmails.filter((e) => e.id).map((e) => e.id!)));
-    setOrigProfileAddressIds(new Set(profileAddresses.filter((a) => a.id).map((a) => a.id!)));
-
-    setMyProfile({ ...myProfile, first_name: firstName || null, last_name: lastName || null, full_name });
-    setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  }
+  const profileAutoSave = useAutoSave<ProfileAutoSaveSnapshot>({
+    recordId: myProfile?.id ?? "",
+    tableName: "profiles",
+    state: profileAutoSaveState,
+    restore: profileAutoSaveRestore,
+    enabled: !loading && !!myProfile,
+    save: async (snap) => {
+      if (!myProfile) return;
+      const full_name = [snap.firstName, snap.lastName].filter(Boolean).join(" ");
+      await supabase
+        .from("profiles")
+        .update({ first_name: snap.firstName || null, last_name: snap.lastName || null, full_name })
+        .eq("id", myProfile.id);
+      await Promise.all([
+        syncPhones("profile", myProfile.id, snap.profilePhones, origProfilePhoneIds),
+        syncEmails("profile", myProfile.id, snap.profileEmails, origProfileEmailIds),
+        syncAddresses("profile", myProfile.id, snap.profileAddresses, origProfileAddressIds),
+      ]);
+      setOrigProfilePhoneIds(new Set(snap.profilePhones.filter((p) => p.id).map((p) => p.id!)));
+      setOrigProfileEmailIds(new Set(snap.profileEmails.filter((e) => e.id).map((e) => e.id!)));
+      setOrigProfileAddressIds(new Set(snap.profileAddresses.filter((a) => a.id).map((a) => a.id!)));
+      setMyProfile({ ...myProfile, first_name: snap.firstName || null, last_name: snap.lastName || null, full_name });
+    },
+  });
 
   // ── Password change ──
   async function handleChangePassword() {
@@ -549,21 +574,13 @@ export function SettingsClient({ userId }: SettingsClientProps) {
               <EmailSection emails={profileEmails} onChange={setProfileEmails} />
               <AddressSection addresses={profileAddresses} onChange={setProfileAddresses} />
 
-              <button
-                onClick={handleSaveProfile}
-                disabled={saving}
-                className="inline-flex items-center gap-1.5 rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-              >
-                {saved ? (
-                  <>
-                    <Check className="h-3.5 w-3.5" /> Saved
-                  </>
-                ) : saving ? (
-                  "Saving..."
-                ) : (
-                  "Save Profile"
-                )}
-              </button>
+              <SavedIndicator
+                saving={profileAutoSave.saving}
+                savedAt={profileAutoSave.savedAt}
+                error={profileAutoSave.error}
+                hasUndo={profileAutoSave.hasUndo}
+                onUndo={profileAutoSave.undo}
+              />
             </div>
 
             {/* Password */}

@@ -98,7 +98,7 @@ export function NewProject({ userId }: NewProjectProps) {
   }, [form, supabase, projectCompanies, router]);
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       {/* Back link */}
       <Link
         href="/projects"

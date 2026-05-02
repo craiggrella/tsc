@@ -41,7 +41,7 @@ export default function DashboardLayout({
     <div className="flex h-screen bg-white">
       <SidebarNav open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden min-w-0">
         {/* Top bar - mobile */}
         <header className="flex h-28 items-center border-b border-zinc-200 px-4 lg:hidden">
           <button
@@ -61,7 +61,7 @@ export default function DashboardLayout({
 
         {/* Main content */}
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-screen-2xl px-4 py-6 sm:px-6 lg:px-8">
             <div className="flex justify-end mb-4">
               <OmniSearch />
             </div>

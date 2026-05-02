@@ -46,7 +46,7 @@ export function DashboardClient({ userId }: DashboardClientProps) {
     async function load() {
       const now = new Date();
       const fiveDaysAgo = new Date(now.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString();
-      const twoWeeksOut = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString();
+      const fourteenDaysOut = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
 
       const [{ data: profile }, { data: calls }, { data: meetings }] = await Promise.all([
         supabase.from("profiles").select("full_name").eq("id", userId).single(),
@@ -60,7 +60,6 @@ export function DashboardClient({ userId }: DashboardClientProps) {
           .from("meetings")
           .select("id, title, meeting_status, meeting_at")
           .gte("meeting_at", now.toISOString())
-          .lte("meeting_at", twoWeeksOut)
           .order("meeting_at", { ascending: true })
           .limit(10),
       ]);
@@ -68,7 +67,11 @@ export function DashboardClient({ userId }: DashboardClientProps) {
       setFirstName(profile?.full_name?.split(" ")[0] || "");
       const typedCalls = (calls || []) as unknown as RecentCall[];
       setRecentCalls(typedCalls);
-      setUpcomingMeetings(meetings || []);
+      const allUpcoming = meetings || [];
+      const next14Days = allUpcoming.filter(
+        (m) => m.meeting_at && new Date(m.meeting_at) <= fourteenDaysOut
+      );
+      setUpcomingMeetings(next14Days.length > 0 ? next14Days : allUpcoming);
 
       // Fetch primary phone + email for call contacts
       const contactIds = [...new Set(typedCalls.map((c) => c.contact_id).filter(Boolean) as string[])];

@@ -2,14 +2,16 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Plus, Search, Contact, Check } from "lucide-react";
+import { Plus, Search, Contact } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatPhone } from "@/lib/utils";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { MultiFilterDropdown } from "@/components/shared/multi-filter-dropdown";
 
 interface CompanyData {
   id: string;
   name: string;
+  buyer_type?: string | null;
 }
 
 interface ContactRow {
@@ -20,7 +22,6 @@ interface ContactRow {
   title: string | null;
   type: string | null;
   exec_level: string | null;
-  buyer_type: string | null;
   company_id: string | null;
   department: string[];
   assistant_id: string | null;
@@ -29,83 +30,6 @@ interface ContactRow {
   company: CompanyData | null;
 }
 
-
-function MultiFilterDropdown({
-  label,
-  options,
-  selected,
-  onChange,
-}: {
-  label: string;
-  options: { value: string; label: string }[];
-  selected: string[];
-  onChange: (values: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  const display =
-    selected.length === 0
-      ? `${label}: All`
-      : `${label}: ${selected.length}`;
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-700 hover:border-zinc-300 transition-colors"
-      >
-        {display} <span className="ml-1 text-zinc-400">&#9662;</span>
-      </button>
-      {open && (
-        <div className="absolute z-50 mt-1 w-48 rounded-md border border-zinc-200 bg-white shadow-lg py-1">
-          <button
-            onClick={() => onChange([])}
-            className={`flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-zinc-50 ${
-              selected.length === 0 ? "text-black font-medium" : "text-zinc-500"
-            }`}
-          >
-            All
-          </button>
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => {
-                onChange(
-                  selected.includes(opt.value)
-                    ? selected.filter((v) => v !== opt.value)
-                    : [...selected, opt.value]
-                );
-              }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs hover:bg-zinc-50"
-            >
-              <div
-                className={`h-3.5 w-3.5 rounded border ${
-                  selected.includes(opt.value)
-                    ? "border-black bg-black"
-                    : "border-zinc-300"
-                } flex items-center justify-center`}
-              >
-                {selected.includes(opt.value) && (
-                  <Check className="h-2.5 w-2.5 text-white" />
-                )}
-              </div>
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 interface ContactsClientProps {
   userId: string;
@@ -151,12 +75,16 @@ export function ContactsClient({ userId }: ContactsClientProps) {
 
   // Build and execute query with filters
   function buildQuery(searchValue?: string) {
+    const filterByBuyer = hasBuyerType || buyerTypeFilter.length > 0;
+    const companyJoin = filterByBuyer
+      ? "company:companies!company_id!inner(id, name, buyer_type)"
+      : "company:companies!company_id(id, name, buyer_type)";
     let query = supabase
       .from("people")
-      .select("*, company:companies!company_id(id, name)", { count: "exact" });
+      .select(`*, ${companyJoin}`, { count: "exact" });
 
-    if (hasBuyerType) query = query.not("buyer_type", "is", null);
-    if (buyerTypeFilter.length > 0) query = query.in("buyer_type", buyerTypeFilter);
+    if (hasBuyerType) query = query.not("company.buyer_type", "is", null);
+    if (buyerTypeFilter.length > 0) query = query.in("company.buyer_type", buyerTypeFilter);
     if (typeFilter.length > 0) query = query.in("type", typeFilter);
     if (levelFilter.length > 0) query = query.in("exec_level", levelFilter);
 
@@ -182,12 +110,17 @@ export function ContactsClient({ userId }: ContactsClientProps) {
 
       if (matchingCompanies && matchingCompanies.length > 0) {
         const companyIds = matchingCompanies.map((c) => c.id);
+        const filterByBuyer = hasBuyerType || buyerTypeFilter.length > 0;
+        const companyJoin = filterByBuyer
+          ? "company:companies!company_id!inner(id, name, buyer_type)"
+          : "company:companies!company_id(id, name, buyer_type)";
         let companyQuery = supabase
           .from("people")
-          .select("*, company:companies!company_id(id, name)")
+          .select(`*, ${companyJoin}`)
           .in("company_id", companyIds);
 
-        if (buyerTypeFilter.length > 0) companyQuery = companyQuery.in("buyer_type", buyerTypeFilter);
+        if (hasBuyerType) companyQuery = companyQuery.not("company.buyer_type", "is", null);
+        if (buyerTypeFilter.length > 0) companyQuery = companyQuery.in("company.buyer_type", buyerTypeFilter);
         if (typeFilter.length > 0) companyQuery = companyQuery.in("type", typeFilter);
         if (levelFilter.length > 0) companyQuery = companyQuery.in("exec_level", levelFilter);
 

@@ -13,6 +13,8 @@ import {
   type RelationOption,
 } from "@/components/shared/relation-picker";
 import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { SavedIndicator } from "@/components/shared/saved-indicator";
 
 const STATUS_OPTIONS = [
   { value: "need_to_send", label: "Need to Send" },
@@ -50,8 +52,6 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   // Submission fields
@@ -246,40 +246,66 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
     [items, supabase, updateItem]
   );
 
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    try {
-      // Auto-generate description from items
-      const clientNames = [...new Set(items.map((i) => clients.find((c) => c.id === i.clientId)?.full_name).filter(Boolean))];
-      const personLabels = [...new Set(items.map((i) => i.personLabel).filter(Boolean))];
+  type SubmissionAutoSaveSnapshot = {
+    status: string;
+    submissionDate: string;
+    reason: string[];
+    notes: string;
+    items: SubmissionItem[];
+  };
+
+  const autoSaveState: SubmissionAutoSaveSnapshot = useMemo(
+    () => ({ status, submissionDate, reason, notes, items }),
+    [status, submissionDate, reason, notes, items]
+  );
+
+  const autoSaveRestore = useCallback((snap: unknown) => {
+    const s = snap as Partial<SubmissionAutoSaveSnapshot> & Record<string, unknown>;
+    if (s && typeof s === "object" && "status" in s) {
+      setStatus((s.status as string) ?? "need_to_send");
+      setSubmissionDate((s.submissionDate as string) ?? "");
+      setReason((s.reason as string[]) ?? []);
+      setNotes((s.notes as string) ?? "");
+      if (s.items) setItems(s.items as SubmissionItem[]);
+    } else if (s && typeof s === "object") {
+      const row = s as Record<string, unknown>;
+      setStatus((row.status as string) ?? "need_to_send");
+      setSubmissionDate((row.submission_date as string) ?? "");
+      setReason((row.reason as string[]) ?? []);
+      setNotes((row.notes as string) ?? "");
+    }
+  }, []);
+
+  const autoSave = useAutoSave<SubmissionAutoSaveSnapshot>({
+    recordId: submissionId,
+    tableName: "submissions",
+    state: autoSaveState,
+    restore: autoSaveRestore,
+    enabled: !loading,
+    save: async (snap) => {
+      const clientNames = [...new Set(snap.items.map((i) => clients.find((c) => c.id === i.clientId)?.full_name).filter(Boolean))];
+      const personLabels = [...new Set(snap.items.map((i) => i.personLabel).filter(Boolean))];
       const description = [...clientNames, ...personLabels].join(", ") || null;
 
-      await supabase
-        .from("submissions")
-        .update({
-          status,
-          submission_date: submissionDate || null,
-          reason: reason.length > 0 ? reason : null,
-          notes: notes || null,
-          description,
-          set_meeting: false,
-          response: null,
-        })
-        .eq("id", submissionId);
+      await supabase.from("submissions").update({
+        status: snap.status,
+        submission_date: snap.submissionDate || null,
+        reason: snap.reason.length > 0 ? snap.reason : null,
+        notes: snap.notes || null,
+        description,
+        set_meeting: false,
+        response: null,
+      }).eq("id", submissionId);
 
-      // Track current item IDs to find deletions
-      const currentItemIds = new Set(items.filter((i) => i.id).map((i) => i.id!));
+      const currentItemIds = new Set(snap.items.filter((i) => i.id).map((i) => i.id!));
       const toDelete = [...origItemIds].filter((id) => !currentItemIds.has(id));
-
-      // Delete removed items
       for (const id of toDelete) {
         await supabase.from("submission_item_projects").delete().eq("submission_item_id", id);
         await supabase.from("submission_items").delete().eq("id", id);
       }
 
-      // Upsert items
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
+      for (let i = 0; i < snap.items.length; i++) {
+        const item = snap.items[i];
         const payload = {
           submission_id: submissionId,
           client_id: item.clientId || null,
@@ -301,15 +327,12 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         }
 
         if (itemId) {
-          // Sync projects
           await supabase.from("submission_item_projects").delete().eq("submission_item_id", itemId);
           if (item.projectIds.length > 0) {
             await supabase.from("submission_item_projects").insert(
               item.projectIds.map((pid) => ({ submission_item_id: itemId, project_id: pid }))
             );
           }
-
-          // Upsert material_responses
           if (item.response && item.materialId && item.personId) {
             await supabase.from("material_responses").upsert(
               { material_id: item.materialId, person_id: item.personId, response: item.response },
@@ -319,15 +342,9 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
         }
       }
 
-      // Update origItemIds
-      setOrigItemIds(new Set(items.map((i) => i.id).filter(Boolean) as string[]));
-
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    } finally {
-      setSaving(false);
-    }
-  }, [status, submissionDate, reason, notes, items, origItemIds, submissionId, clients, supabase, updateItem]);
+      setOrigItemIds(new Set(snap.items.map((i) => i.id).filter(Boolean) as string[]));
+    },
+  });
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Delete this submission?")) return;
@@ -356,17 +373,17 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div>
       {/* Back + Save */}
       <div className="flex items-center justify-between mb-6">
         <Breadcrumb fallbackHref="/submissions" fallbackLabel="Submissions" currentLabel="Submission" />
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="rounded-md bg-black px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-        >
-          {saving ? "Saving..." : saved ? "Saved \u2713" : "Save"}
-        </button>
+        <SavedIndicator
+          saving={autoSave.saving}
+          savedAt={autoSave.savedAt}
+          error={autoSave.error}
+          hasUndo={autoSave.hasUndo}
+          onUndo={autoSave.undo}
+        />
       </div>
 
       {/* Top section */}

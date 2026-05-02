@@ -105,7 +105,7 @@ export function NewMaterial({ userId }: NewMaterialProps) {
   }, [form, supabase, router]);
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       {/* Back link */}
       <Link
         href="/materials"

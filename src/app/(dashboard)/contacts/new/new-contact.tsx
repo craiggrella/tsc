@@ -38,7 +38,6 @@ const emptyForm = {
   title: null as string | null,
   type: null as string | null,
   exec_level: null as string | null,
-  buyer_type: null as string | null,
   company_id: null as string | null,
   department: [] as string[],
   assistant_id: null as string | null,
@@ -56,8 +55,6 @@ export function NewContact({ userId }: NewContactProps) {
   const PERSON_TYPES = toSelectOptions(personTypesItems);
   const execLevelsItems = usePicklist("list_contact_levels");
   const EXEC_LEVELS = toSelectOptions(execLevelsItems);
-  const buyerTypesItems = usePicklist("list_buyer_types");
-  const BUYER_TYPES = toSelectOptions(buyerTypesItems);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
 
@@ -115,7 +112,7 @@ export function NewContact({ userId }: NewContactProps) {
   }, [form, supabase, phones, emails, addresses, socials, router]);
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       {/* Back link */}
       <Link
         href="/contacts"
@@ -196,15 +193,6 @@ export function NewContact({ userId }: NewContactProps) {
             />
           </Field>
         </div>
-        <Field label="Buyer Type">
-          <Select
-            value={form.buyer_type || ""}
-            onChange={(e) => setForm({ ...form, buyer_type: (e.target.value || null) as string | null })}
-            options={BUYER_TYPES}
-            placeholder="Not a buyer"
-          />
-        </Field>
-
         <PhoneSection phones={phones} onChange={setPhones} />
         <EmailSection emails={emails} onChange={setEmails} />
         <AddressSection addresses={addresses} onChange={setAddresses} />

@@ -4,11 +4,12 @@ import { cn } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, string> = {
   // Call statuses
-  to_call: "bg-amber-50 text-amber-700 border-amber-200",
-  incoming: "bg-blue-50 text-blue-700 border-blue-200",
-  left_word: "bg-orange-50 text-orange-700 border-orange-200",
-  returning: "bg-purple-50 text-purple-700 border-purple-200",
-  connected: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  incoming: "bg-emerald-600 text-white border-emerald-700",
+  returning: "bg-blue-600 text-white border-blue-700",
+  left_word: "bg-red-600 text-white border-red-700",
+  to_call: "bg-amber-300 text-black border-amber-400",
+  completed: "bg-zinc-200 text-zinc-700 border-zinc-300",
+  connected: "bg-zinc-200 text-zinc-700 border-zinc-300",
 
   // Submission statuses
   need_to_send: "bg-amber-50 text-amber-700 border-amber-200",
@@ -18,7 +19,6 @@ const STATUS_COLORS: Record<string, string> = {
   need_to_set: "bg-amber-50 text-amber-700 border-amber-200",
   need_to_reschedule: "bg-orange-50 text-orange-700 border-orange-200",
   scheduled: "bg-blue-50 text-blue-700 border-blue-200",
-  completed: "bg-emerald-50 text-emerald-700 border-emerald-200",
   cancelled: "bg-zinc-50 text-zinc-500 border-zinc-200",
 
   // Project statuses
@@ -97,7 +97,7 @@ export function StatusBadge({ status, className }: StatusBadgeProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+        "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold tracking-wide",
         colors,
         className
       )}

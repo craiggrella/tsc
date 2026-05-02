@@ -14,6 +14,8 @@ import {
 import { Field, Input, Select } from "@/components/shared/detail-panel";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
 import { formatPhone } from "@/lib/utils";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { SavedIndicator } from "@/components/shared/saved-indicator";
 
 interface PersonData {
   id: string;
@@ -52,8 +54,6 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
   const COMPANY_DESIGNATIONS = companyTypeItems.map((i) => i.label);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState("info");
 
@@ -115,7 +115,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
       if (personIds.length > 0) {
         const { data: fullPeople } = await supabase
           .from("people")
-          .select("id, full_name, title, exec_level, department, buyer_type")
+          .select("id, full_name, title, exec_level, department, company:companies!company_id(buyer_type)")
           .in("id", personIds);
         const [{ data: personPhones }, { data: personEmails }] = await Promise.all([
           supabase
@@ -136,16 +136,19 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
         for (const p of personPhones || []) { if (!phoneMap[p.entity_id]) phoneMap[p.entity_id] = p.number; }
         for (const e of personEmails || []) { if (!emailMap[e.entity_id]) emailMap[e.entity_id] = e.address; }
 
-        enrichedPeople = (fullPeople || []).map((p) => ({
-          id: p.id,
-          full_name: p.full_name,
-          title: p.title,
-          exec_level: p.exec_level,
-          department: p.department || [],
-          buyer_type: p.buyer_type,
-          primary_phone: phoneMap[p.id] || null,
-          primary_email: emailMap[p.id] || null,
-        }));
+        enrichedPeople = (fullPeople || []).map((p) => {
+          const pp = p as unknown as { id: string; full_name: string; title: string | null; exec_level: string | null; department: string[] | null; company: { buyer_type: string | null } | null };
+          return {
+            id: pp.id,
+            full_name: pp.full_name,
+            title: pp.title,
+            exec_level: pp.exec_level,
+            department: pp.department || [],
+            buyer_type: pp.company?.buyer_type || null,
+            primary_phone: phoneMap[pp.id] || null,
+            primary_email: emailMap[pp.id] || null,
+          };
+        });
       }
       setRelatedPeople(enrichedPeople);
 
@@ -262,19 +265,47 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
     [people]
   );
 
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    try {
-      const payload = { name: form.name, status: form.status };
+  type ProjectAutoSaveSnapshot = {
+    form: typeof emptyForm;
+    projectCompanies: typeof projectCompanies;
+  };
+
+  const autoSaveState: ProjectAutoSaveSnapshot = useMemo(
+    () => ({ form, projectCompanies }),
+    [form, projectCompanies]
+  );
+
+  const autoSaveRestore = useCallback((snap: unknown) => {
+    const s = snap as Partial<ProjectAutoSaveSnapshot> & Record<string, unknown>;
+    if (s && typeof s === "object" && "form" in s && s.form) {
+      setForm(s.form as typeof emptyForm);
+      if (s.projectCompanies) setProjectCompanies(s.projectCompanies as typeof projectCompanies);
+    } else if (s && typeof s === "object") {
+      const row = s as Record<string, unknown>;
+      setForm((prev) => ({
+        ...prev,
+        name: (row.name as string) ?? "",
+        status: (row.status as string) ?? "development",
+      }));
+    }
+  }, []);
+
+  const autoSave = useAutoSave<ProjectAutoSaveSnapshot>({
+    recordId: projectId,
+    tableName: "projects",
+    state: autoSaveState,
+    restore: autoSaveRestore,
+    enabled: !loading,
+    save: async (snap) => {
+      const payload = { name: snap.form.name, status: snap.form.status };
       await supabase.from("projects").update(payload).eq("id", projectId);
 
-      // Sync project_companies
-      const currentIds = new Set(projectCompanies.filter((r) => r.id).map((r) => r.id!));
+      const currentIds = new Set(snap.projectCompanies.filter((r) => r.id).map((r) => r.id!));
       const toDelete = [...origCompanyIds].filter((id) => !currentIds.has(id));
       if (toDelete.length > 0) {
         await supabase.from("project_companies").delete().in("id", toDelete);
       }
-      for (const pc of projectCompanies) {
+      for (const pc of snap.projectCompanies) {
         if (pc.id) {
           await supabase.from("project_companies").update({ company_id: pc.company_id, designation: pc.designation }).eq("id", pc.id);
         } else {
@@ -282,20 +313,14 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
           if (data) pc.id = data.id;
         }
       }
-      setOrigCompanyIds(new Set(projectCompanies.filter((r) => r.id).map((r) => r.id!)));
+      setOrigCompanyIds(new Set(snap.projectCompanies.filter((r) => r.id).map((r) => r.id!)));
 
-      // Sync people
       await supabase.from("project_people").delete().eq("project_id", projectId);
-      if (form.person_ids.length > 0) {
-        await supabase.from("project_people").insert(form.person_ids.map((id) => ({ project_id: projectId, person_id: id })));
+      if (snap.form.person_ids.length > 0) {
+        await supabase.from("project_people").insert(snap.form.person_ids.map((id) => ({ project_id: projectId, person_id: id })));
       }
-
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    } finally {
-      setSaving(false);
-    }
-  }, [form, projectId, supabase, projectCompanies, origCompanyIds]);
+    },
+  });
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Delete this project?")) return;
@@ -325,7 +350,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       <Breadcrumb fallbackHref="/projects" fallbackLabel="Projects" currentLabel={form.name || "Untitled"} />
 
       {/* Header */}
@@ -333,13 +358,13 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
         <h1 className="text-xl font-semibold tracking-tight text-black">
           {form.name || "Untitled Project"}
         </h1>
-        <button
-            onClick={handleSave}
-            disabled={saving}
-            className="rounded-md bg-black px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-          >
-            {saving ? "Saving..." : saved ? "Saved \u2713" : "Save"}
-          </button>
+        <SavedIndicator
+          saving={autoSave.saving}
+          savedAt={autoSave.savedAt}
+          error={autoSave.error}
+          hasUndo={autoSave.hasUndo}
+          onUndo={autoSave.undo}
+        />
       </div>
 
       {/* Tabs */}

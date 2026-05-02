@@ -28,6 +28,7 @@ export interface Company {
   outlet: string[];
   department: string[];
   phone: string | null;
+  buyer_type: BuyerType | null;
   notes: string | null;
   created_at: string;
   updated_at: string;
@@ -72,7 +73,6 @@ export interface Person {
   company_id: string | null;
   department: string[];
   assistant_id: string | null;
-  buyer_type: BuyerType | null;
   notes: string | null;
   created_by: string | null;
   created_at: string;
@@ -143,7 +143,7 @@ export type ProjectStatus =
 // CONTACT INFO SUB-RECORDS
 // ============================================
 
-export type PhoneDesignation = "Cell" | "Office" | "Home" | "Assistant" | "Fax" | "Other";
+export type PhoneDesignation = "Cell" | "Office" | "Home" | "Assistant" | "Fax" | "INTL" | "Other";
 export type EmailDesignation = "Work" | "Personal" | "Assistant" | "Other";
 export type AddressDesignation = "Office" | "Home" | "Mailing" | "Other";
 
@@ -208,7 +208,7 @@ export interface Call {
   client_id: string | null;
   user_id: string;
   call_status: CallStatus;
-  priority: "high" | "medium" | "low" | null;
+  subject: string | null;
   preferred_phone: string | null; // UUID of contact_phones record, or "custom"
   phone_custom: string | null;
   quick_connect: boolean;

@@ -52,18 +52,18 @@ export function invalidatePicklistCache(tableName: string) {
 
 // All picklist table names for the settings page
 export const PICKLIST_TABLES = [
-  { table: "list_company_types", label: "Company Types" },
   { table: "list_contact_types", label: "Contact Types" },
   { table: "list_contact_levels", label: "Contact Levels" },
+  { table: "list_company_types", label: "Company Types" },
+  { table: "list_location_types", label: "Location Types" },
+  { table: "list_departments", label: "Departments" },
   { table: "list_buyer_types", label: "Buyer Types" },
   { table: "list_outlets", label: "Outlets" },
-  { table: "list_departments", label: "Departments" },
-  { table: "list_project_statuses", label: "Project Statuses" },
   { table: "list_material_types", label: "Material Types" },
   { table: "list_statuses", label: "Material Statuses" },
   { table: "list_formats", label: "Formats" },
   { table: "list_genres", label: "Genres" },
   { table: "list_sub_genres", label: "Sub-Genres" },
-  { table: "list_location_types", label: "Location Types" },
+  { table: "list_project_statuses", label: "Project Statuses" },
   { table: "list_credit_statuses", label: "Credit Statuses" },
 ];

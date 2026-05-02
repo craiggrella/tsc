@@ -16,6 +16,8 @@ import { FilePicker } from "@/components/shared/file-picker";
 import { FilePreview } from "@/components/shared/file-preview";
 
 import { usePicklist, toSelectOptions, toRelationOptions } from "@/lib/picklists";
+import { useAutoSave } from "@/hooks/use-auto-save";
+import { SavedIndicator } from "@/components/shared/saved-indicator";
 
 const RESPONSE_COLORS: Record<string, string> = {
   love: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -70,8 +72,6 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
   const SUB_GENRES = toRelationOptions(subGenreItems);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const [clients, setClients] = useState<{ id: string; full_name: string }[]>([]);
@@ -125,7 +125,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
       // Load readers from submission_items where material_id = this material
       const { data: items } = await supabase
         .from("submission_items")
-        .select("id, submission_id, response, person:people!person_id(id, full_name, buyer_type, company:companies!company_id(id, name)), submission:submissions!submission_id(submission_date)")
+        .select("id, submission_id, response, person:people!person_id(id, full_name, company:companies!company_id(id, name, buyer_type)), submission:submissions!submission_id(submission_date)")
         .eq("material_id", materialId);
 
       // Get projects per submission_item
@@ -147,8 +147,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
         const person = (item as Record<string, unknown>).person as {
           id: string;
           full_name: string;
-          buyer_type: string | null;
-          company: { id: string; name: string } | null;
+          company: { id: string; name: string; buyer_type: string | null } | null;
         } | null;
         if (person && !readerMap.has(person.id)) {
           const proj = projectMap.get(item.id);
@@ -157,7 +156,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
             full_name: person.full_name,
             company_id: person.company?.id || null,
             company_name: person.company?.name || null,
-            buyer_type: person.buyer_type,
+            buyer_type: person.company?.buyer_type || null,
             response: item.response,
             project_id: proj?.id || null,
             project_name: proj?.name || null,
@@ -186,42 +185,68 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
     return readers.filter((r) => r.response === responseFilter);
   }, [readers, responseFilter]);
 
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    try {
+  const autoSaveRestore = useCallback((snap: unknown) => {
+    const s = snap as Partial<{ form: typeof emptyForm }> & Record<string, unknown>;
+    if (s && typeof s === "object" && "form" in s && s.form) {
+      setForm(s.form as typeof emptyForm);
+    } else if (s && typeof s === "object") {
+      const row = s as Record<string, unknown>;
+      const subGenreRaw = row.sub_genre as string | string[] | null;
+      const subGenre = Array.isArray(subGenreRaw)
+        ? subGenreRaw
+        : typeof subGenreRaw === "string" && subGenreRaw
+        ? subGenreRaw.split(",").map((s) => s.trim())
+        : [];
+      setForm((prev) => ({
+        ...prev,
+        title: (row.title as string) ?? "",
+        is_client_material: (row.is_client_material as boolean) ?? false,
+        direction: (row.direction as "Outgoing" | "Incoming") ?? "Outgoing",
+        material_type: (row.material_type as string) ?? "Script",
+        format: (row.format as string | null) ?? null,
+        genre: (row.genre as string | null) ?? null,
+        sub_genre: subGenre,
+        status: (row.status as string) ?? "not_yet_reviewed",
+        box_file_id: (row.box_file_id as string | null) ?? null,
+        file_url: (row.file_url as string | null) ?? null,
+      }));
+    }
+  }, []);
+
+  const autoSave = useAutoSave<{ form: typeof emptyForm }>({
+    recordId: materialId,
+    tableName: "client_materials",
+    state: useMemo(() => ({ form }), [form]),
+    restore: autoSaveRestore,
+    enabled: !loading,
+    save: async (snap) => {
       const payload = {
-        title: form.title,
-        is_client_material: form.is_client_material,
-        client_id: form.is_client_material && form.client_ids.length > 0 ? form.client_ids[0] : null,
-        direction: form.direction,
-        material_type: form.material_type,
-        format: form.format || null,
-        genre: form.genre || null,
+        title: snap.form.title,
+        is_client_material: snap.form.is_client_material,
+        client_id: snap.form.is_client_material && snap.form.client_ids.length > 0 ? snap.form.client_ids[0] : null,
+        direction: snap.form.direction,
+        material_type: snap.form.material_type,
+        format: snap.form.format || null,
+        genre: snap.form.genre || null,
         sub_genre:
-          Array.isArray(form.sub_genre) && form.sub_genre.length > 0
-            ? form.sub_genre.join(", ")
+          Array.isArray(snap.form.sub_genre) && snap.form.sub_genre.length > 0
+            ? snap.form.sub_genre.join(", ")
             : null,
-        status: form.status,
-        box_file_id: form.box_file_id,
-        file_url: form.file_url,
+        status: snap.form.status,
+        box_file_id: snap.form.box_file_id,
+        file_url: snap.form.file_url,
       };
 
       await supabase.from("client_materials").update(payload).eq("id", materialId);
 
-      // Sync material_clients junction table
       await supabase.from("material_clients").delete().eq("material_id", materialId);
-      if (form.is_client_material && form.client_ids.length > 0) {
+      if (snap.form.is_client_material && snap.form.client_ids.length > 0) {
         await supabase.from("material_clients").insert(
-          form.client_ids.map((cid) => ({ material_id: materialId, client_id: cid }))
+          snap.form.client_ids.map((cid) => ({ material_id: materialId, client_id: cid }))
         );
       }
-
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    } finally {
-      setSaving(false);
-    }
-  }, [form, materialId, supabase]);
+    },
+  });
 
   const handleDelete = useCallback(async () => {
     if (!confirm("Delete this material?")) return;
@@ -243,7 +268,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
   }
 
   return (
-    <div className="mx-auto max-w-4xl">
+    <div>
       <Breadcrumb fallbackHref="/materials" fallbackLabel="Client Material" currentLabel={form.title || "Untitled"} />
 
       {/* Header */}
@@ -251,13 +276,13 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
         <h1 className="text-xl font-semibold tracking-tight text-black">
           {form.title || "Untitled Material"}
         </h1>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="rounded-md bg-black px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-        >
-          {saving ? "Saving..." : saved ? "Saved \u2713" : "Save"}
-        </button>
+        <SavedIndicator
+          saving={autoSave.saving}
+          savedAt={autoSave.savedAt}
+          error={autoSave.error}
+          hasUndo={autoSave.hasUndo}
+          onUndo={autoSave.undo}
+        />
       </div>
 
       {/* General Info */}
