@@ -258,7 +258,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
       setOrigMacroIds(new Set(mList.filter((m) => m.id).map((m) => m.id!)));
 
       // materials is now an array of { material: {...} } from the junction join
-      const materialList = ((materials || []) as { material: { id: string; title: string; material_type: string | null; format: string | null; genre: string | null; sub_genre: string | null; status: string; updated_at: string } | null }[])
+      const materialList = ((materials || []) as unknown as { material: { id: string; title: string; material_type: string | null; format: string | null; genre: string | null; sub_genre: string | null; status: string; updated_at: string } | null }[])
         .map((row) => row.material)
         .filter((m): m is NonNullable<typeof m> => m !== null)
         .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
