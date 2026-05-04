@@ -18,10 +18,8 @@ import { usePicklist, toSelectOptions, toRelationOptions } from "@/lib/picklists
 
 const emptyForm = {
   title: "",
-  is_client_material: false,
   client_id: null as string | null,
-  direction: "Outgoing" as "Outgoing" | "Incoming",
-  material_type: "Script" as string,
+  material_type: null as string | null,
   format: null as string | null,
   genre: null as string | null,
   sub_genre: [] as string[],
@@ -75,9 +73,7 @@ export function NewMaterial({ userId }: NewMaterialProps) {
     try {
       const payload = {
         title: form.title,
-        is_client_material: form.is_client_material,
-        client_id: form.is_client_material ? form.client_id : null,
-        direction: form.direction,
+        client_id: form.client_id,
         material_type: form.material_type,
         format: form.format || null,
         genre: form.genre || null,
@@ -137,41 +133,22 @@ export function NewMaterial({ userId }: NewMaterialProps) {
           />
         </Field>
 
-        <Field label="Is Client Material">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={form.is_client_material}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  is_client_material: e.target.checked,
-                  client_id: e.target.checked ? form.client_id : null,
-                })
-              }
-              className="accent-black"
-            />
-            <span className="text-sm text-zinc-600">This material belongs to a client</span>
-          </label>
+        <Field label="Client">
+          <RelationPicker
+            value={form.client_id}
+            onChange={(id) => setForm({ ...form, client_id: id })}
+            options={clientOptions}
+            placeholder="Select client..."
+          />
         </Field>
-
-        {form.is_client_material && (
-          <Field label="Client">
-            <RelationPicker
-              value={form.client_id}
-              onChange={(id) => setForm({ ...form, client_id: id })}
-              options={clientOptions}
-              placeholder="Select client..."
-            />
-          </Field>
-        )}
 
         <div className="grid grid-cols-3 gap-3">
           <Field label="Type">
             <Select
-              value={form.material_type}
-              onChange={(e) => setForm({ ...form, material_type: e.target.value as string })}
+              value={form.material_type || ""}
+              onChange={(e) => setForm({ ...form, material_type: e.target.value || null })}
               options={MATERIAL_TYPES}
+              placeholder="Select..."
             />
           </Field>
           <Field label="Format">

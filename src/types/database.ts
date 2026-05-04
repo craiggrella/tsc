@@ -281,9 +281,7 @@ export interface ClientMaterial {
   org_id: string;
   title: string;
   client_id: string | null;
-  is_client_material: boolean;
   material_type: string | null;
-  direction: "Outgoing" | "Incoming";
   status: ClientMaterialStatus;
   format: string | null;
   genre: string | null;

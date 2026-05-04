@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
   RelationPicker,
+  MultiRelationPicker,
   type RelationOption,
 } from "@/components/shared/relation-picker";
 import { Field, Input, Textarea } from "@/components/shared/detail-panel";
@@ -81,6 +82,7 @@ const emptyForm = {
   last_name: null as string | null,
   company_id: null as string | null,
   staff_level: null as string | null,
+  manager_ids: [] as string[],
   notes: null as string | null,
 };
 
@@ -99,6 +101,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
 
   const [companies, setCompanies] = useState<CompanyData[]>([]);
   const [projects, setProjects] = useState<ProjectData[]>([]);
+  const [managers, setManagers] = useState<{ id: string; full_name: string }[]>([]);
 
   // Picklists
   const creditStatusItems = usePicklist("list_credit_statuses");
@@ -118,7 +121,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
 
   // Related records
   const [relatedMaterials, setRelatedMaterials] = useState<
-    { id: string; title: string; material_type: string | null; format: string | null; genre: string | null; sub_genre: string | null; direction: string | null; status: string }[]
+    { id: string; title: string; material_type: string | null; format: string | null; genre: string | null; sub_genre: string | null; status: string }[]
   >([]);
 
   // Credits
@@ -160,6 +163,8 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
         { data: materials },
         { data: creditsData },
         { data: macrosData },
+        { data: managersData },
+        { data: clientManagersData },
       ] = await Promise.all([
         supabase
           .from("clients")
@@ -191,11 +196,11 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
           .select("id, platform, url")
           .eq("entity_type", "client")
           .eq("entity_id", clientId),
+        // Pull via the material_clients junction so joint-authored material shows on both clients
         supabase
-          .from("client_materials")
-          .select("id, title, material_type, format, genre, sub_genre, direction, status")
-          .eq("client_id", clientId)
-          .order("updated_at", { ascending: false }),
+          .from("material_clients")
+          .select("material:client_materials!material_id(id, title, material_type, format, genre, sub_genre, status, updated_at)")
+          .eq("client_id", clientId),
         supabase
           .from("client_credits")
           .select("id, project_id, project_name, level, credit_status, start_year, end_year, project:projects!project_id(id, name)")
@@ -206,6 +211,14 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
           .select("id, label, content, sort_order, updated_at")
           .eq("client_id", clientId)
           .order("sort_order"),
+        supabase
+          .from("profiles")
+          .select("id, full_name")
+          .order("full_name"),
+        supabase
+          .from("client_managers")
+          .select("manager_id")
+          .eq("client_id", clientId),
       ]);
 
       if (!client) {
@@ -219,11 +232,13 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
         last_name: client.last_name,
         company_id: client.company_id,
         staff_level: client.staff_level,
+        manager_ids: (clientManagersData || []).map((r) => r.manager_id as string),
         notes: client.notes,
       });
 
       setCompanies(companiesData || []);
       setProjects(projectsData || []);
+      setManagers(managersData || []);
 
       const pList = (phonesData || []) as PhoneRecord[];
       const eList = (emailsData || []) as EmailRecord[];
@@ -242,7 +257,12 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
       setMacros(mList);
       setOrigMacroIds(new Set(mList.filter((m) => m.id).map((m) => m.id!)));
 
-      setRelatedMaterials(materials || []);
+      // materials is now an array of { material: {...} } from the junction join
+      const materialList = ((materials || []) as { material: { id: string; title: string; material_type: string | null; format: string | null; genre: string | null; sub_genre: string | null; status: string; updated_at: string } | null }[])
+        .map((row) => row.material)
+        .filter((m): m is NonNullable<typeof m> => m !== null)
+        .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+      setRelatedMaterials(materialList);
 
       // Credits
       const cList = (creditsData || []).map((c: Record<string, unknown>) => ({
@@ -599,6 +619,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
         last_name: (row.last_name as string | null) ?? null,
         company_id: (row.company_id as string | null) ?? null,
         staff_level: (row.staff_level as string | null) ?? null,
+        manager_ids: (row.manager_ids as string[]) ?? [],
         notes: (row.notes as string | null) ?? null,
       });
     }
@@ -611,7 +632,30 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     restore: autoSaveRestore,
     enabled: !loading,
     save: async (snap) => {
-      await supabase.from("clients").update({ ...snap.form }).eq("id", clientId);
+      const { manager_ids, ...clientPayload } = snap.form;
+      await supabase.from("clients").update(clientPayload).eq("id", clientId);
+
+      // Sync client_managers join table
+      const { data: existing } = await supabase
+        .from("client_managers")
+        .select("manager_id")
+        .eq("client_id", clientId);
+      const existingIds = new Set((existing || []).map((r) => r.manager_id as string));
+      const desiredIds = new Set(manager_ids);
+      const toAdd = [...desiredIds].filter((id) => !existingIds.has(id));
+      const toRemove = [...existingIds].filter((id) => !desiredIds.has(id));
+      if (toAdd.length > 0) {
+        await supabase
+          .from("client_managers")
+          .insert(toAdd.map((id) => ({ client_id: clientId, manager_id: id })));
+      }
+      if (toRemove.length > 0) {
+        await supabase
+          .from("client_managers")
+          .delete()
+          .eq("client_id", clientId)
+          .in("manager_id", toRemove);
+      }
       await Promise.all([
         syncPhones("client", clientId, snap.phones, origPhoneIds),
         syncEmails("client", clientId, snap.emails, origEmailIds),
@@ -763,6 +807,15 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
               value={form.staff_level || ""}
               onChange={(e) => setForm({ ...form, staff_level: e.target.value || null })}
               placeholder="Staff level"
+            />
+          </Field>
+
+          <Field label="Manager">
+            <MultiRelationPicker
+              value={form.manager_ids}
+              onChange={(ids) => setForm({ ...form, manager_ids: ids })}
+              options={managers.map((m) => ({ id: m.id, label: m.full_name || "(unnamed)" }))}
+              placeholder="Select managers..."
             />
           </Field>
 

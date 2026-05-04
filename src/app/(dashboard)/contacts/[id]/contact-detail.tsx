@@ -96,7 +96,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
     { id: string; description: string; status: string }[]
   >([]);
   const [relatedMaterials, setRelatedMaterials] = useState<
-    { id: string; title: string; material_type: string | null; direction: string | null; response: string | null }[]
+    { id: string; title: string; material_type: string | null; response: string | null }[]
   >([]);
 
   // Grid tab state
@@ -244,13 +244,13 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
         // submission_items already fetched above; now get materials for this person's items
         const { data: personItems } = await supabase
           .from("submission_items")
-          .select("id, response, material:client_materials!material_id(id, title, material_type, direction)")
+          .select("id, response, material:client_materials!material_id(id, title, material_type)")
           .eq("person_id", contactId)
           .not("material_id", "is", null);
         const seen = new Set<string>();
-        const uniqueMats: { id: string; title: string; material_type: string | null; direction: string | null; response: string | null }[] = [];
+        const uniqueMats: { id: string; title: string; material_type: string | null; response: string | null }[] = [];
         for (const item of personItems || []) {
-          const mat = (item as Record<string, unknown>).material as { id: string; title: string; material_type: string | null; direction: string | null } | null;
+          const mat = (item as Record<string, unknown>).material as { id: string; title: string; material_type: string | null } | null;
           if (mat && !seen.has(mat.id)) {
             seen.add(mat.id);
             uniqueMats.push({ ...mat, response: item.response || null });
@@ -731,7 +731,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
                 <div>
                   <p className="text-sm font-medium text-black">{m.title}</p>
                   <p className="text-xs text-zinc-500">
-                    {[m.material_type, m.direction].filter(Boolean).map((v) => (v as string).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())).join(" \u00b7 ") || "\u2014"}
+                    {m.material_type ? (m.material_type as string).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "\u2014"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">

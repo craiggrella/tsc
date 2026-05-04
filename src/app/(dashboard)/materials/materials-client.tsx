@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, FileText, Filter } from "lucide-react";
+import { Plus, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
@@ -22,9 +22,7 @@ type MaterialType = "Pilot" | "Movie" | "Episode" | "Treatment" | "Script" | "Ot
 interface MaterialRow {
   id: string;
   title: string;
-  is_client_material: boolean;
   client_id: string | null;
-  direction: "Outgoing" | "Incoming";
   material_type: MaterialType;
   format: string | null;
   genre: string | null;
@@ -47,32 +45,59 @@ export function MaterialsClient({ userId }: MaterialsClientProps) {
   const STATUSES = toSelectOptions(statusItems);
   const [loading, setLoading] = useState(true);
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
+  const [clients, setClients] = useState<{ id: string; full_name: string }[]>([]);
+  const [materialClients, setMaterialClients] = useState<Record<string, string[]>>({});
   const [statusFilter, setStatusFilter] = useState<MaterialStatus | "">("");
+  const [clientSearch, setClientSearch] = useState<string>("");
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     async function load() {
-      const { data: matsData } = await supabase
-        .from("client_materials")
-        .select("*, client:clients!client_id(id, full_name)")
-        .order("created_at", { ascending: false });
+      const [{ data: matsData }, { data: clientsData }, { data: mcData }] = await Promise.all([
+        supabase
+          .from("client_materials")
+          .select("*, client:clients!client_id(id, full_name)")
+          .order("created_at", { ascending: false }),
+        supabase.from("clients").select("id, full_name").order("full_name"),
+        supabase.from("material_clients").select("material_id, client_id"),
+      ]);
       setMaterials((matsData as MaterialRow[]) || []);
+      setClients(clientsData || []);
+      const mcMap: Record<string, string[]> = {};
+      for (const row of (mcData || []) as { material_id: string; client_id: string }[]) {
+        if (!mcMap[row.material_id]) mcMap[row.material_id] = [];
+        mcMap[row.material_id].push(row.client_id);
+      }
+      setMaterialClients(mcMap);
       setLoading(false);
     }
     load();
   }, []);
+
+  const clientNameById = useMemo(
+    () => new Map(clients.map((c) => [c.id, c.full_name.toLowerCase()])),
+    [clients]
+  );
 
   const filtered = useMemo(() => {
     let result = materials;
     if (statusFilter) {
       result = result.filter((m) => m.status === statusFilter);
     }
+    if (clientSearch.trim()) {
+      const q = clientSearch.toLowerCase();
+      result = result.filter((m) => {
+        if (m.client?.full_name?.toLowerCase().includes(q)) return true;
+        const ids = materialClients[m.id] || [];
+        return ids.some((id) => (clientNameById.get(id) || "").includes(q));
+      });
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter((m) => m.title.toLowerCase().includes(q));
     }
     return result;
-  }, [materials, statusFilter, search]);
+  }, [materials, statusFilter, clientSearch, search, materialClients, clientNameById]);
 
   if (loading) return <div className="flex items-center justify-center py-20"><p className="text-sm text-zinc-400">Loading...</p></div>;
 
@@ -94,13 +119,19 @@ export function MaterialsClient({ userId }: MaterialsClientProps) {
 
       {/* Filters */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Filter className="h-3.5 w-3.5 text-zinc-400" />
         <input
           type="text"
           placeholder="Search by title..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-700 outline-none hover:border-zinc-300 focus:border-zinc-400 w-48"
+          className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700 outline-none hover:border-zinc-300 focus:border-zinc-400 flex-1 min-w-[260px] max-w-[420px]"
+        />
+        <input
+          type="text"
+          placeholder="Search by client..."
+          value={clientSearch}
+          onChange={(e) => setClientSearch(e.target.value)}
+          className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-700 outline-none hover:border-zinc-300 focus:border-zinc-400 w-56"
         />
         <select
           value={statusFilter}
@@ -112,8 +143,8 @@ export function MaterialsClient({ userId }: MaterialsClientProps) {
             <option key={s.value} value={s.value}>{s.label}</option>
           ))}
         </select>
-        {(statusFilter || search) && (
-          <button onClick={() => { setStatusFilter(""); setSearch(""); }} className="text-xs text-zinc-400 hover:text-zinc-600">Clear</button>
+        {(statusFilter || clientSearch || search) && (
+          <button onClick={() => { setStatusFilter(""); setClientSearch(""); setSearch(""); }} className="text-xs text-zinc-400 hover:text-zinc-600">Clear</button>
         )}
         <span className="ml-auto text-xs text-zinc-400">
           {filtered.length} material{filtered.length !== 1 ? "s" : ""}

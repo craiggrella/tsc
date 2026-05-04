@@ -29,10 +29,8 @@ const RESPONSE_COLORS: Record<string, string> = {
 
 const emptyForm = {
   title: "",
-  is_client_material: false,
   client_ids: [] as string[],
-  direction: "Outgoing" as "Outgoing" | "Incoming",
-  material_type: "Script" as string,
+  material_type: null as string | null,
   format: null as string | null,
   genre: null as string | null,
   sub_genre: [] as string[],
@@ -106,9 +104,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
 
       setForm({
         title: material.title,
-        is_client_material: material.is_client_material,
         client_ids: clientIds,
-        direction: material.direction,
         material_type: material.material_type,
         format: material.format,
         genre: material.genre,
@@ -201,9 +197,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
       setForm((prev) => ({
         ...prev,
         title: (row.title as string) ?? "",
-        is_client_material: (row.is_client_material as boolean) ?? false,
-        direction: (row.direction as "Outgoing" | "Incoming") ?? "Outgoing",
-        material_type: (row.material_type as string) ?? "Script",
+        material_type: (row.material_type as string | null) ?? null,
         format: (row.format as string | null) ?? null,
         genre: (row.genre as string | null) ?? null,
         sub_genre: subGenre,
@@ -223,9 +217,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
     save: async (snap) => {
       const payload = {
         title: snap.form.title,
-        is_client_material: snap.form.is_client_material,
-        client_id: snap.form.is_client_material && snap.form.client_ids.length > 0 ? snap.form.client_ids[0] : null,
-        direction: snap.form.direction,
+        client_id: snap.form.client_ids.length > 0 ? snap.form.client_ids[0] : null,
         material_type: snap.form.material_type,
         format: snap.form.format || null,
         genre: snap.form.genre || null,
@@ -241,7 +233,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
       await supabase.from("client_materials").update(payload).eq("id", materialId);
 
       await supabase.from("material_clients").delete().eq("material_id", materialId);
-      if (snap.form.is_client_material && snap.form.client_ids.length > 0) {
+      if (snap.form.client_ids.length > 0) {
         await supabase.from("material_clients").insert(
           snap.form.client_ids.map((cid) => ({ material_id: materialId, client_id: cid }))
         );
@@ -296,41 +288,22 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
           />
         </Field>
 
-        <Field label="Is Client Material">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={form.is_client_material}
-              onChange={(e) =>
-                setForm({
-                  ...form,
-                  is_client_material: e.target.checked,
-                  client_ids: e.target.checked ? form.client_ids : [],
-                })
-              }
-              className="accent-black"
-            />
-            <span className="text-sm text-zinc-600">This material belongs to a client</span>
-          </label>
+        <Field label="Clients">
+          <MultiRelationPicker
+            value={form.client_ids}
+            onChange={(ids) => setForm({ ...form, client_ids: ids })}
+            options={clientOptions}
+            placeholder="Select clients..."
+          />
         </Field>
-
-        {form.is_client_material && (
-          <Field label="Clients">
-            <MultiRelationPicker
-              value={form.client_ids}
-              onChange={(ids) => setForm({ ...form, client_ids: ids })}
-              options={clientOptions}
-              placeholder="Select clients..."
-            />
-          </Field>
-        )}
 
         <div className="grid grid-cols-3 gap-3">
           <Field label="Type">
             <Select
-              value={form.material_type}
-              onChange={(e) => setForm({ ...form, material_type: e.target.value as string })}
+              value={form.material_type || ""}
+              onChange={(e) => setForm({ ...form, material_type: e.target.value || null })}
               options={MATERIAL_TYPES}
+              placeholder="Select..."
             />
           </Field>
           <Field label="Format">
