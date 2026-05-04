@@ -25,6 +25,7 @@ import {
 import { PICKLIST_TABLES, invalidatePicklistCache } from "@/lib/picklists";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { SavedIndicator } from "@/components/shared/saved-indicator";
+import { MfaEnroll } from "@/components/shared/mfa-enroll";
 
 interface PicklistRow {
   id: string;
@@ -641,6 +642,12 @@ export function SettingsClient({ userId }: SettingsClientProps) {
                   "Update Password"
                 )}
               </button>
+            </div>
+
+            {/* Two-Factor Authentication */}
+            <div className="space-y-4 border-t border-zinc-200 pt-6">
+              <h2 className="text-sm font-semibold text-black">Two-Factor Authentication</h2>
+              <MfaEnroll />
             </div>
           </div>
         )}

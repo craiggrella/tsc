@@ -26,6 +26,13 @@ export default function LoginPage() {
     if (error) {
       setError(error.message);
       setLoading(false);
+      return;
+    }
+
+    // If user has MFA enrolled, route to the challenge page before /dashboard.
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (aal?.nextLevel === "aal2" && aal.currentLevel === "aal1") {
+      window.location.href = "/auth/mfa-challenge";
     } else {
       window.location.href = "/dashboard";
     }

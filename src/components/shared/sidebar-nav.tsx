@@ -14,6 +14,7 @@ import {
   Clapperboard,
   FileText,
   Building2,
+  HelpCircle,
   LogOut,
   X,
 } from "lucide-react";
@@ -102,8 +103,21 @@ export function SidebarNav({ open, onClose }: SidebarNavProps) {
           })}
         </nav>
 
-        {/* Footer: Settings + Logout */}
+        {/* Footer: Help + Settings + Logout */}
         <div className="border-t border-zinc-200 px-3 py-3 space-y-0.5">
+          <Link
+            href="/help"
+            onClick={onClose}
+            className={cn(
+              "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+              pathname.startsWith("/help")
+                ? "bg-zinc-200/70 text-black"
+                : "text-zinc-500 hover:bg-zinc-100 hover:text-black"
+            )}
+          >
+            <HelpCircle className="h-4 w-4" />
+            Help
+          </Link>
           <Link
             href="/settings"
             onClick={onClose}

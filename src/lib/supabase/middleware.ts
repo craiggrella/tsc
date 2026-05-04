@@ -49,6 +49,21 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // If user has MFA enrolled but session is still aal1, force them through
+  // the challenge before letting them into any protected route.
+  if (user && !isPublicRoute) {
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (
+      aal?.nextLevel === "aal2" &&
+      aal.currentLevel === "aal1" &&
+      !pathname.startsWith("/auth/mfa-challenge")
+    ) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/auth/mfa-challenge";
+      return NextResponse.redirect(url);
+    }
+  }
+
   // If user is logged in and on login page, redirect to dashboard
   if (user && pathname.startsWith("/login")) {
     const url = request.nextUrl.clone();
