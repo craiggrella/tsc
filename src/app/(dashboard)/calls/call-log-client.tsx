@@ -1041,7 +1041,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                   ? clientsCache.get(form.client_id || "")?.full_name
                   : selectedContact?.full_name
               }
-              placeholder="Search contacts or clients..."
+              placeholder="Search contact name"
               onAdd={addContact}
               addLabel="Add contact"
             />
