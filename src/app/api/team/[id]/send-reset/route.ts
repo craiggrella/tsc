@@ -79,7 +79,8 @@ export async function POST(
     });
   } catch (err) {
     console.error("send-reset email failed:", err);
-    return NextResponse.json({ error: "Failed to send reset email." }, { status: 500 });
+    const msg = err instanceof Error ? err.message : "Failed to send reset email.";
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true, email: profile.email });

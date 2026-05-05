@@ -88,13 +88,14 @@ export async function POST(request: NextRequest) {
     });
   } catch (err) {
     console.error("invite email failed:", err);
+    const msg = err instanceof Error ? err.message : "unknown error";
     return NextResponse.json({
       id: authUser.user.id,
       full_name,
       email,
       role,
       emailSent: false,
-      warning: "User created but invite email failed to send. Use 'Send Password Reset' to retry.",
+      warning: `User created but invite email failed to send: ${msg}. Use 'Send Password Reset' to retry.`,
     });
   }
 
