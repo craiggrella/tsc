@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Search, Clapperboard, Filter } from "lucide-react";
+import { Plus, Search, Clapperboard, Filter, Image as ImageIcon } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
 import type { ProjectStatus } from "@/types/database";
@@ -12,6 +12,7 @@ interface ProjectRow {
   id: string;
   name: string;
   status: ProjectStatus;
+  poster_url: string | null;
   created_at: string;
 }
 
@@ -136,6 +137,7 @@ export function ProjectsClient({ userId }: ProjectsClientProps) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-zinc-200 bg-zinc-50/50">
+              <th className="w-12 px-3 py-2.5"></th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Name</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Status</th>
               <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Companies</th>
@@ -144,7 +146,7 @@ export function ProjectsClient({ userId }: ProjectsClientProps) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-3 py-12 text-center text-sm text-zinc-400">
+                <td colSpan={4} className="px-3 py-12 text-center text-sm text-zinc-400">
                   <Clapperboard className="mx-auto mb-2 h-8 w-8 text-zinc-300" />
                   No projects found.
                 </td>
@@ -158,6 +160,16 @@ export function ProjectsClient({ userId }: ProjectsClientProps) {
                     onClick={() => router.push(`/projects/${project.id}`)}
                     className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                   >
+                    <td className="px-3 py-1.5">
+                      <div className="h-10 w-7 overflow-hidden rounded bg-zinc-100 flex items-center justify-center flex-shrink-0">
+                        {project.poster_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={project.poster_url} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <ImageIcon className="h-3 w-3 text-zinc-300" />
+                        )}
+                      </div>
+                    </td>
                     <td className="px-3 py-2.5 font-medium text-black">{project.name}</td>
                     <td className="px-3 py-2.5">
                       <StatusBadge status={project.status} />
