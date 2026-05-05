@@ -112,7 +112,8 @@ export function SettingsClient({ userId }: SettingsClientProps) {
   const [teamSaving, setTeamSaving] = useState(false);
   const [teamSaved, setTeamSaved] = useState(false);
   const [teamDeleting, setTeamDeleting] = useState(false);
-  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [inviteSentTo, setInviteSentTo] = useState<string | null>(null);
+  const [inviteWarning, setInviteWarning] = useState<string | null>(null);
 
   // Admin Set Password state (existing members)
   const [setPwInput, setSetPwInput] = useState("");
@@ -362,7 +363,8 @@ export function SettingsClient({ userId }: SettingsClientProps) {
 
     setEditingId(member.id);
     setIsNewMember(false);
-    setTempPassword(null);
+    setInviteSentTo(null);
+    setInviteWarning(null);
     setSetPwInput("");
     setSetPwResult(null);
     setSetPwError(null);
@@ -421,7 +423,8 @@ export function SettingsClient({ userId }: SettingsClientProps) {
   function openNewMember() {
     setEditingId(null);
     setIsNewMember(true);
-    setTempPassword(null);
+    setInviteSentTo(null);
+    setInviteWarning(null);
     setTeamForm({ first_name: "", last_name: "", email: "", role: "manager" });
     setTeamPhones([]);
     setTeamEmails([]);
@@ -457,7 +460,13 @@ export function SettingsClient({ userId }: SettingsClientProps) {
           return;
         }
 
-        setTempPassword(data.tempPassword);
+        if (data.emailSent) {
+          setInviteSentTo(data.email);
+          setInviteWarning(null);
+        } else {
+          setInviteSentTo(null);
+          setInviteWarning(data.warning || "User created but invite email did not send.");
+        }
         setEditingId(data.id);
         setIsNewMember(false);
 
@@ -955,12 +964,19 @@ export function SettingsClient({ userId }: SettingsClientProps) {
         }
       >
         <div className="space-y-4">
-          {/* Temp password banner */}
-          {tempPassword && (
+          {/* Invite-sent banner */}
+          {inviteSentTo && (
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+              <p className="text-xs font-medium text-emerald-800">Invite Sent</p>
+              <p className="mt-0.5 text-xs text-emerald-700">
+                Email sent to <span className="font-medium">{inviteSentTo}</span> with a link to set a password and sign in.
+              </p>
+            </div>
+          )}
+          {inviteWarning && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-              <p className="text-xs font-medium text-amber-800">Temporary Password</p>
-              <p className="mt-0.5 font-mono text-sm text-amber-900 select-all">{tempPassword}</p>
-              <p className="mt-1 text-[11px] text-amber-600">Share this with the new team member. They should change it on first login.</p>
+              <p className="text-xs font-medium text-amber-800">Heads up</p>
+              <p className="mt-0.5 text-xs text-amber-700">{inviteWarning}</p>
             </div>
           )}
 
