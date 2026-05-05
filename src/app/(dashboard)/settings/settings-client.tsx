@@ -120,6 +120,11 @@ export function SettingsClient({ userId }: SettingsClientProps) {
   const [setPwResult, setSetPwResult] = useState<string | null>(null);
   const [setPwError, setSetPwError] = useState<string | null>(null);
 
+  // Admin Send Password Reset state
+  const [sendResetSending, setSendResetSending] = useState(false);
+  const [sendResetSent, setSendResetSent] = useState<string | null>(null);
+  const [sendResetError, setSendResetError] = useState<string | null>(null);
+
   // ── Picklists tab state ──
   const [picklistData, setPicklistData] = useState<Record<string, PicklistRow[]>>({});
   const [expandedPicklists, setExpandedPicklists] = useState<Set<string>>(new Set());
@@ -361,6 +366,8 @@ export function SettingsClient({ userId }: SettingsClientProps) {
     setSetPwInput("");
     setSetPwResult(null);
     setSetPwError(null);
+    setSendResetSent(null);
+    setSendResetError(null);
     setTeamForm({
       first_name: member.first_name || "",
       last_name: member.last_name || "",
@@ -540,6 +547,26 @@ export function SettingsClient({ userId }: SettingsClientProps) {
     setSetPwError(null);
     setSetPwResult(null);
   }
+
+  // ── Team: send password reset email ──
+  const handleSendReset = useCallback(async () => {
+    if (!editingId) return;
+    if (!confirm("Send a password reset link to this user? Their current password will be invalidated immediately.")) return;
+    setSendResetSending(true);
+    setSendResetError(null);
+    setSendResetSent(null);
+    try {
+      const res = await fetch(`/api/team/${editingId}/send-reset`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSendResetError(data.error || "Failed to send reset email.");
+      } else {
+        setSendResetSent(data.email || teamForm.email);
+      }
+    } finally {
+      setSendResetSending(false);
+    }
+  }, [editingId, teamForm.email]);
 
   // ── Team: delete member ──
   const handleTeamDelete = useCallback(async () => {
@@ -1023,6 +1050,35 @@ export function SettingsClient({ userId }: SettingsClientProps) {
                   </button>
                 </>
               )}
+
+              <div className="space-y-3 border-t border-zinc-200 pt-4">
+                <h3 className="text-sm font-semibold text-black">Send Password Reset</h3>
+                <p className="text-xs text-zinc-500">
+                  To send a password reset to the user, click the button below. They will receive
+                  an email with a link to set a new password. Their current password will be
+                  invalidated immediately.
+                </p>
+
+                {sendResetSent ? (
+                  <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2">
+                    <p className="text-xs text-emerald-800">
+                      Reset link sent to <span className="font-medium">{sendResetSent}</span>.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {sendResetError && <p className="text-xs text-red-500">{sendResetError}</p>}
+                    <button
+                      type="button"
+                      onClick={handleSendReset}
+                      disabled={sendResetSending}
+                      className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-black hover:bg-zinc-50 transition-colors disabled:opacity-50"
+                    >
+                      {sendResetSending ? "Sending..." : "Send Password Reset"}
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
