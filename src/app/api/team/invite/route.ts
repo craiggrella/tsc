@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
 
   // Create auth user with a random unknowable password — they'll set their own
   // via the email link. UUID-based so it can't be guessed.
-  const randomPw = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
+  const randomPw = crypto.randomUUID();
   const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
     email,
     password: randomPw,

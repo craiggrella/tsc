@@ -33,7 +33,7 @@ export async function POST(
 
   // 1) Invalidate the existing password — overwrite with a random value
   //    they will never see. Forces them through the email flow.
-  const randomPw = `${crypto.randomUUID()}-${crypto.randomUUID()}`;
+  const randomPw = crypto.randomUUID();
   const { error: updateErr } = await supabase.auth.admin.updateUserById(id, {
     password: randomPw,
   });
