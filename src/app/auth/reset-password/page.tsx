@@ -18,22 +18,47 @@ export default function ResetPasswordPage() {
 
     async function init() {
       const url = new URL(window.location.href);
-      const code = url.searchParams.get("code");
 
+      // Format 1: PKCE flow — ?code=...
+      const code = url.searchParams.get("code");
       if (code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
-          setExchangeError("This reset link is invalid or expired. Request a new one from the sign-in page.");
+          setExchangeError(`Reset link invalid or expired: ${error.message}`);
           setReady(true);
           return;
         }
-        // Strip code from URL so refresh doesn't try to re-exchange.
         window.history.replaceState({}, "", "/auth/reset-password");
         setReady(true);
         return;
       }
 
-      // No code — check if there's already a session (link already exchanged).
+      // Format 2: Implicit flow — fragment with #access_token=...&refresh_token=...
+      if (window.location.hash && window.location.hash.length > 1) {
+        const hash = new URLSearchParams(window.location.hash.slice(1));
+        const access_token = hash.get("access_token");
+        const refresh_token = hash.get("refresh_token");
+        if (access_token && refresh_token) {
+          const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+          if (error) {
+            setExchangeError(`Reset link invalid or expired: ${error.message}`);
+            setReady(true);
+            return;
+          }
+          window.history.replaceState({}, "", "/auth/reset-password");
+          setReady(true);
+          return;
+        }
+        // Hash present but no tokens — could be an error
+        const errDesc = hash.get("error_description") || hash.get("error");
+        if (errDesc) {
+          setExchangeError(`Reset link error: ${errDesc}`);
+          setReady(true);
+          return;
+        }
+      }
+
+      // No code, no fragment — check existing session as a last resort.
       const { data } = await supabase.auth.getSession();
       if (!data.session) {
         setExchangeError("No active reset session. Request a new reset link from the sign-in page.");
