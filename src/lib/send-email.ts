@@ -78,7 +78,19 @@ export async function sendTransactionalEmail({ to, subject, html }: SendArgs) {
   const fromName = process.env.EMAIL_FROM_NAME;
 
   if (!url || !key || !fromEmail || !fromName) {
-    throw new Error("Email service not configured (EMAIL_API_URL/KEY/FROM_EMAIL/FROM_NAME).");
+    const missing: string[] = [];
+    if (!url) missing.push("EMAIL_API_URL");
+    if (!key) missing.push("EMAIL_API_KEY");
+    if (!fromEmail) missing.push("EMAIL_FROM_EMAIL");
+    if (!fromName) missing.push("EMAIL_FROM_NAME");
+    const present = {
+      EMAIL_API_URL: url ? `len=${url.length}` : "MISSING",
+      EMAIL_API_KEY: key ? `len=${key.length}` : "MISSING",
+      EMAIL_FROM_EMAIL: fromEmail ? `len=${fromEmail.length}` : "MISSING",
+      EMAIL_FROM_NAME: fromName ? `len=${fromName.length}` : "MISSING",
+    };
+    console.error("Email env debug:", present);
+    throw new Error(`Missing email env vars: ${missing.join(", ")}`);
   }
 
   const payload = JSON.stringify({
