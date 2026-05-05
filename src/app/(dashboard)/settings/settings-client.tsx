@@ -114,6 +114,12 @@ export function SettingsClient({ userId }: SettingsClientProps) {
   const [teamDeleting, setTeamDeleting] = useState(false);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
 
+  // Admin Set Password state (existing members)
+  const [setPwInput, setSetPwInput] = useState("");
+  const [setPwSaving, setSetPwSaving] = useState(false);
+  const [setPwResult, setSetPwResult] = useState<string | null>(null);
+  const [setPwError, setSetPwError] = useState<string | null>(null);
+
   // ── Picklists tab state ──
   const [picklistData, setPicklistData] = useState<Record<string, PicklistRow[]>>({});
   const [expandedPicklists, setExpandedPicklists] = useState<Set<string>>(new Set());
@@ -352,6 +358,9 @@ export function SettingsClient({ userId }: SettingsClientProps) {
     setEditingId(member.id);
     setIsNewMember(false);
     setTempPassword(null);
+    setSetPwInput("");
+    setSetPwResult(null);
+    setSetPwError(null);
     setTeamForm({
       first_name: member.first_name || "",
       last_name: member.last_name || "",
@@ -495,6 +504,42 @@ export function SettingsClient({ userId }: SettingsClientProps) {
       setTeamSaving(false);
     }
   }, [isNewMember, editingId, teamForm, myProfile, supabase, teamPhones, teamEmails, teamAddresses, origTeamPhoneIds, origTeamEmailIds, origTeamAddressIds]);
+
+  // ── Team: admin set password ──
+  const handleSetPassword = useCallback(async () => {
+    if (!editingId) return;
+    const pw = setPwInput.trim();
+    if (pw.length < 8) {
+      setSetPwError("Password must be at least 8 characters.");
+      return;
+    }
+    setSetPwSaving(true);
+    setSetPwError(null);
+    setSetPwResult(null);
+    try {
+      const res = await fetch(`/api/team/${editingId}/set-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: pw }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSetPwError(data.error || "Failed to set password.");
+      } else {
+        setSetPwResult(pw);
+        setSetPwInput("");
+      }
+    } finally {
+      setSetPwSaving(false);
+    }
+  }, [editingId, setPwInput]);
+
+  function generateRandomPassword() {
+    const pw = Math.random().toString(36).slice(-12) + "A1!";
+    setSetPwInput(pw);
+    setSetPwError(null);
+    setSetPwResult(null);
+  }
 
   // ── Team: delete member ──
   const handleTeamDelete = useCallback(async () => {
@@ -935,6 +980,51 @@ export function SettingsClient({ userId }: SettingsClientProps) {
           <PhoneSection phones={teamPhones} onChange={setTeamPhones} />
           <EmailSection emails={teamEmails} onChange={setTeamEmails} />
           <AddressSection addresses={teamAddresses} onChange={setTeamAddresses} />
+
+          {!isNewMember && canManageTeam && editingId && editingId !== userId && (
+            <div className="space-y-3 border-t border-zinc-200 pt-4">
+              <h3 className="text-sm font-semibold text-black">Set Password</h3>
+              <p className="text-xs text-zinc-500">
+                Sets this member&apos;s password directly. Share it with them securely — they can change it after signing in.
+              </p>
+
+              {setPwResult ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
+                  <p className="text-xs font-medium text-amber-800">Password Set</p>
+                  <p className="mt-0.5 font-mono text-sm text-amber-900 select-all">{setPwResult}</p>
+                  <p className="mt-1 text-[11px] text-amber-600">Copy and share this securely. It won&apos;t be shown again.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={setPwInput}
+                      onChange={(e) => setSetPwInput(e.target.value)}
+                      placeholder="New password (min 8 chars)"
+                      className="flex-1 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm text-black outline-none hover:border-zinc-300 focus:border-zinc-400 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={generateRandomPassword}
+                      className="rounded-md border border-zinc-200 px-3 py-1.5 text-xs text-zinc-600 hover:bg-zinc-50 transition-colors whitespace-nowrap"
+                    >
+                      Generate
+                    </button>
+                  </div>
+                  {setPwError && <p className="text-xs text-red-500">{setPwError}</p>}
+                  <button
+                    type="button"
+                    onClick={handleSetPassword}
+                    disabled={setPwSaving || setPwInput.trim().length < 8}
+                    className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                  >
+                    {setPwSaving ? "Setting..." : "Set Password"}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </DetailPanel>
     </div>

@@ -11,6 +11,30 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"password" | "magic">("password");
   const [magicSent, setMagicSent] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+
+  async function handleForgotPassword() {
+    if (!email) {
+      setError("Enter your email above first.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+
+    const res = await fetch("/api/auth/send-reset", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      setError(data.error || "Failed to send reset email.");
+    } else {
+      setResetSent(true);
+    }
+    setLoading(false);
+  }
 
   async function handlePasswordLogin(e: React.FormEvent) {
     const supabase = createClient();
@@ -72,16 +96,21 @@ export default function LoginPage() {
           />
         </div>
 
-        {magicSent ? (
+        {magicSent || resetSent ? (
           <div className="text-center">
             <p className="text-sm text-zinc-600">
-              Check your email for a login link.
+              {resetSent
+                ? "Check your email for a password reset link."
+                : "Check your email for a login link."}
             </p>
             <button
-              onClick={() => setMagicSent(false)}
+              onClick={() => {
+                setMagicSent(false);
+                setResetSent(false);
+              }}
               className="mt-4 text-sm text-zinc-400 hover:text-zinc-600"
             >
-              Try again
+              Back to sign in
             </button>
           </div>
         ) : (
@@ -152,6 +181,17 @@ export default function LoginPage() {
                 ? "Sign in with magic link instead"
                 : "Sign in with password instead"}
             </button>
+
+            {mode === "password" && (
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                disabled={loading}
+                className="block w-full text-center text-xs text-zinc-400 hover:text-zinc-600 disabled:opacity-50"
+              >
+                Forgot password?
+              </button>
+            )}
           </form>
         )}
       </div>
