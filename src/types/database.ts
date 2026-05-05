@@ -125,6 +125,9 @@ export interface Project {
   org_id: string;
   name: string;
   status: ProjectStatus;
+  imdb_id: string | null;
+  poster_url: string | null;
+  poster_fetched_at: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Loader2, Plus, X, ExternalLink } from "lucide-react";
+import { Loader2, Plus, X, ExternalLink, Image as ImageIcon, Search } from "lucide-react";
 import { Breadcrumb, buildFromParams } from "@/components/shared/breadcrumb";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -56,6 +56,17 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
   const [form, setForm] = useState(emptyForm);
   const [deleting, setDeleting] = useState(false);
   const [activeTab, setActiveTab] = useState("info");
+
+  // ── Poster state ──
+  const [posterUrl, setPosterUrl] = useState<string | null>(null);
+  const [imdbId, setImdbId] = useState<string | null>(null);
+  const [posterFetchedAt, setPosterFetchedAt] = useState<string | null>(null);
+  const [posterLoading, setPosterLoading] = useState(false);
+  const [posterCandidates, setPosterCandidates] = useState<
+    { imdbID: string; Title: string; Year: string; Type: string; Poster: string | null }[] | null
+  >(null);
+  const [posterError, setPosterError] = useState<string | null>(null);
+  const [manualSearchInput, setManualSearchInput] = useState("");
 
   const [people, setPeople] = useState<{ id: string; full_name: string; title: string | null; exec_level: string | null }[]>([]);
   const [companyList, setCompanyList] = useState<{ id: string; name: string }[]>([]);
@@ -158,6 +169,11 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
         person_ids: personIds,
       });
 
+      setPosterUrl(project.poster_url ?? null);
+      setImdbId(project.imdb_id ?? null);
+      setPosterFetchedAt(project.poster_fetched_at ?? null);
+      const shouldAutoFetch = !project.poster_url && !project.poster_fetched_at;
+
       setRelatedClients(
         (credits || [])
           .map((c: Record<string, unknown>) => {
@@ -252,9 +268,86 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
       setRelatedMeetings(enrichedMeetings);
 
       setLoading(false);
+
+      if (shouldAutoFetch) {
+        triggerFetchPoster();
+      }
     }
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  async function triggerFetchPoster(q?: string) {
+    setPosterLoading(true);
+    setPosterError(null);
+    setPosterCandidates(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/fetch-poster`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(q ? { q } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPosterError(data.error || "Failed to fetch poster.");
+      } else if (data.matched) {
+        setPosterUrl(data.poster_url);
+        setImdbId(data.imdb_id);
+        setPosterFetchedAt(new Date().toISOString());
+      } else {
+        setPosterCandidates(data.candidates || []);
+        setPosterFetchedAt(new Date().toISOString());
+      }
+    } catch (err) {
+      setPosterError(err instanceof Error ? err.message : "Failed to fetch poster.");
+    } finally {
+      setPosterLoading(false);
+    }
+  }
+
+  async function handlePickCandidate(imdbID: string) {
+    setPosterLoading(true);
+    setPosterError(null);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/set-poster`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imdb_id: imdbID }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPosterUrl(data.poster_url);
+        setImdbId(data.imdb_id);
+        setPosterCandidates(null);
+      } else {
+        setPosterError(data.error || "Failed to set poster.");
+      }
+    } finally {
+      setPosterLoading(false);
+    }
+  }
+
+  async function handleClearPoster() {
+    setPosterLoading(true);
+    try {
+      await fetch(`/api/projects/${projectId}/clear-poster`, { method: "POST" });
+      setPosterUrl(null);
+      setImdbId(null);
+      setPosterFetchedAt(null);
+      setPosterCandidates(null);
+      await triggerFetchPoster();
+    } finally {
+      // triggerFetchPoster manages loading state at the end
+    }
+  }
+
+  function handleManualSearch(e: React.FormEvent) {
+    e.preventDefault();
+    const q = manualSearchInput.trim();
+    if (!q) return;
+    triggerFetchPoster(q);
+    setManualSearchInput("");
+  }
 
   const companyOptions: RelationOption[] = useMemo(
     () => companyList.map((c) => ({ id: c.id, label: c.name })),
@@ -353,19 +446,95 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
     <div>
       <Breadcrumb fallbackHref="/projects" fallbackLabel="Projects" currentLabel={form.name || "Untitled"} />
 
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-semibold tracking-tight text-black">
-          {form.name || "Untitled Project"}
-        </h1>
-        <SavedIndicator
-          saving={autoSave.saving}
-          savedAt={autoSave.savedAt}
-          error={autoSave.error}
-          hasUndo={autoSave.hasUndo}
-          onUndo={autoSave.undo}
+      {/* Header — poster + name */}
+      <div className="mb-6 flex items-start gap-4">
+        <PosterBlock
+          posterUrl={posterUrl}
+          loading={posterLoading}
+          onReplace={handleClearPoster}
         />
+        <div className="flex-1 min-w-0 flex items-start justify-between pt-1">
+          <h1 className="text-xl font-semibold tracking-tight text-black">
+            {form.name || "Untitled Project"}
+          </h1>
+          <SavedIndicator
+            saving={autoSave.saving}
+            savedAt={autoSave.savedAt}
+            error={autoSave.error}
+            hasUndo={autoSave.hasUndo}
+            onUndo={autoSave.undo}
+          />
+        </div>
       </div>
+
+      {/* Poster picker — only when we have candidates or no match */}
+      {(posterCandidates || posterError) && (
+        <div className="mb-6 rounded-md border border-zinc-200 bg-zinc-50 p-4">
+          {posterError ? (
+            <div>
+              <p className="text-xs text-red-500 mb-2">{posterError}</p>
+              <ManualPosterSearch
+                value={manualSearchInput}
+                onChange={setManualSearchInput}
+                onSubmit={handleManualSearch}
+              />
+            </div>
+          ) : posterCandidates && posterCandidates.length === 0 ? (
+            <div>
+              <p className="text-xs text-zinc-600 mb-2">
+                No poster found for &ldquo;{form.name}&rdquo;. Try a different search:
+              </p>
+              <ManualPosterSearch
+                value={manualSearchInput}
+                onChange={setManualSearchInput}
+                onSubmit={handleManualSearch}
+              />
+            </div>
+          ) : posterCandidates && posterCandidates.length > 0 ? (
+            <div>
+              <p className="text-xs font-medium text-zinc-700 mb-3">
+                Multiple matches — pick one:
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {posterCandidates.map((c) => (
+                  <button
+                    key={c.imdbID}
+                    type="button"
+                    onClick={() => handlePickCandidate(c.imdbID)}
+                    disabled={posterLoading}
+                    className="group flex flex-col gap-1 rounded-md border border-zinc-200 bg-white p-2 text-left hover:border-black transition-colors disabled:opacity-50"
+                  >
+                    {c.Poster ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={c.Poster}
+                        alt={c.Title}
+                        className="aspect-[2/3] w-full rounded object-cover bg-zinc-100"
+                      />
+                    ) : (
+                      <div className="aspect-[2/3] w-full rounded bg-zinc-100 flex items-center justify-center">
+                        <ImageIcon className="h-6 w-6 text-zinc-300" />
+                      </div>
+                    )}
+                    <p className="truncate text-xs font-medium text-black">{c.Title}</p>
+                    <p className="text-[10px] text-zinc-500">
+                      {c.Year} • {c.Type}
+                    </p>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 pt-3 border-t border-zinc-200">
+                <p className="text-[11px] text-zinc-500 mb-2">Not the right ones? Search by a different title:</p>
+                <ManualPosterSearch
+                  value={manualSearchInput}
+                  onChange={setManualSearchInput}
+                  onSubmit={handleManualSearch}
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="mb-6 flex gap-1 border-b border-zinc-200">
@@ -679,5 +848,75 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
         </button>
       </div>
     </div>
+  );
+}
+
+function PosterBlock({
+  posterUrl,
+  loading,
+  onReplace,
+}: {
+  posterUrl: string | null;
+  loading: boolean;
+  onReplace: () => void;
+}) {
+  return (
+    <div className="flex-shrink-0">
+      <div className="relative w-[120px] aspect-[2/3] rounded-md bg-zinc-100 overflow-hidden">
+        {posterUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={posterUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            <ImageIcon className="h-7 w-7 text-zinc-300" />
+          </div>
+        )}
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/60">
+            <Loader2 className="h-5 w-5 animate-spin text-zinc-500" />
+          </div>
+        )}
+      </div>
+      {posterUrl && !loading && (
+        <button
+          type="button"
+          onClick={onReplace}
+          className="mt-1 text-[10px] text-zinc-400 hover:text-zinc-600 transition-colors"
+        >
+          Replace poster
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ManualPosterSearch({
+  value,
+  onChange,
+  onSubmit,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSubmit: (e: React.FormEvent) => void;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="flex items-center gap-2">
+      <div className="relative flex-1">
+        <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Search OMDB by title..."
+          className="w-full rounded-md border border-zinc-200 bg-white pl-7 pr-2 py-1.5 text-xs outline-none focus:border-zinc-400"
+        />
+      </div>
+      <button
+        type="submit"
+        className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 transition-colors"
+      >
+        Search
+      </button>
+    </form>
   );
 }
