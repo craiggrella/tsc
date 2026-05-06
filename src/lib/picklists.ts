@@ -77,5 +77,6 @@ export const PICKLIST_TABLES = [
   { table: "list_genres", label: "Genres" },
   { table: "list_sub_genres", label: "Sub-Genres" },
   { table: "list_project_statuses", label: "Project Statuses" },
-  { table: "list_credit_statuses", label: "Credit Statuses" },
+  { table: "list_contract_statuses", label: "Contract Statuses" },
+  { table: "list_staff_levels", label: "Staff Levels" },
 ];

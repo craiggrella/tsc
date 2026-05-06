@@ -326,8 +326,6 @@ export interface Contract {
   start_date: string | null;
   end_date: string | null;
   box_file_id: string | null;
-  extracted_text: string | null;
-  extracted_at: string | null;
   created_at: string;
   updated_at: string;
 }

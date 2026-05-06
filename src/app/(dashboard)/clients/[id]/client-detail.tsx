@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2, ExternalLink, Plus, Trash2, Copy, Check as CheckIcon, FileText, MessageCircle } from "lucide-react";
+import { Loader2, ExternalLink, Plus, Trash2, Copy, Check as CheckIcon, FileText } from "lucide-react";
 import { Breadcrumb, buildFromParams } from "@/components/shared/breadcrumb";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -50,7 +50,6 @@ interface CreditRow {
   project_id: string | null;
   project_name: string;
   level: string;
-  credit_status: string | null;
   start_year: number | null;
   end_year: number | null;
   _deleted?: boolean;
@@ -67,7 +66,6 @@ interface ContractRow {
   end_date: string | null;
   box_file_id: string | null;
   box_file_name: string | null;
-  extracted_at: string | null;
   _deleted?: boolean;
 }
 
@@ -125,8 +123,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   const [managers, setManagers] = useState<{ id: string; full_name: string }[]>([]);
 
   // Picklists
-  const creditStatusItems = usePicklist("list_credit_statuses");
-  const creditStatusOptions = useMemo(() => toSelectOptions(creditStatusItems), [creditStatusItems]);
   const contractStatusItems = usePicklist("list_contract_statuses");
   const contractStatusOptions = useMemo(() => toSelectOptions(contractStatusItems), [contractStatusItems]);
   const staffLevelItems = usePicklist("list_staff_levels");
@@ -158,11 +154,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   const [contractsLoaded, setContractsLoaded] = useState(false);
   const [contractFilePickerForRow, setContractFilePickerForRow] = useState<number | null>(null);
   const [contractPreviewFile, setContractPreviewFile] = useState<{ id: string; name: string } | null>(null);
-  const [askOpenForRow, setAskOpenForRow] = useState<number | null>(null);
-  const [askInput, setAskInput] = useState("");
-  const [askLoading, setAskLoading] = useState(false);
-  const [askAnswer, setAskAnswer] = useState<string | null>(null);
-  const [askError, setAskError] = useState<string | null>(null);
 
   // Meetings table
   const [meetingRows, setMeetingRows] = useState<MeetingTableRow[]>([]);
@@ -238,7 +229,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
           .eq("client_id", clientId),
         supabase
           .from("client_credits")
-          .select("id, project_id, project_name, level, credit_status, start_year, end_year, project:projects!project_id(id, name)")
+          .select("id, project_id, project_name, level, start_year, end_year, project:projects!project_id(id, name)")
           .eq("client_id", clientId)
           .order("created_at", { ascending: false }),
         supabase
@@ -305,7 +296,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
         project_id: c.project_id as string | null,
         project_name: c.project_name as string || (c.project as { name: string } | null)?.name || "",
         level: (c.level as string) || "",
-        credit_status: c.credit_status as string | null,
         start_year: c.start_year as number | null,
         end_year: c.end_year as number | null,
       }));
@@ -323,7 +313,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     async function loadContracts() {
       const { data } = await supabase
         .from("contracts")
-        .select("id, project_id, project:projects!project_id(name), staff_level, status, start_date, end_date, box_file_id, extracted_at")
+        .select("id, project_id, project:projects!project_id(name), staff_level, status, start_date, end_date, box_file_id")
         .eq("client_id", clientId)
         .order("created_at", { ascending: false });
       const rows: ContractRow[] = (data || []).map((c) => {
@@ -336,7 +326,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
           start_date: string | null;
           end_date: string | null;
           box_file_id: string | null;
-          extracted_at: string | null;
         };
         return {
           id: r.id,
@@ -348,7 +337,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
           end_date: r.end_date,
           box_file_id: r.box_file_id,
           box_file_name: null,
-          extracted_at: r.extracted_at,
         };
       });
       setContracts(rows);
@@ -590,7 +578,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
 
   // Credits helpers
   function addCreditRow() {
-    setCredits((prev) => [...prev, { project_id: null, project_name: "", level: "", credit_status: null, start_year: null, end_year: null }]);
+    setCredits((prev) => [...prev, { project_id: null, project_name: "", level: "", start_year: null, end_year: null }]);
   }
 
   function updateCredit(index: number, field: keyof CreditRow, value: unknown) {
@@ -614,7 +602,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     return (
       !c.project_id &&
       !c.level &&
-      !c.credit_status &&
       c.start_year === null &&
       c.end_year === null
     );
@@ -639,7 +626,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
         project_id: c.project_id,
         project_name: c.project_name || (projects.find((p) => p.id === c.project_id)?.name || ""),
         level: c.level || null,
-        credit_status: c.credit_status,
         start_year: c.start_year,
         end_year: c.end_year,
       }).eq("id", c.id!);
@@ -654,7 +640,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
         project_id: c.project_id,
         project_name: c.project_name || (projects.find((p) => p.id === c.project_id)?.name || "Untitled"),
         level: c.level || null,
-        credit_status: c.credit_status,
         start_year: c.start_year,
         end_year: c.end_year,
       }).select("id").single();
@@ -703,7 +688,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
         end_date: null,
         box_file_id: null,
         box_file_name: null,
-        extracted_at: null,
       },
     ]);
   }
@@ -751,7 +735,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
       return;
     }
 
-    const prev = prevContractsSnapRef.current;
     const toDelete = snap.filter((c) => c._deleted && c.id);
     const toUpdate = snap.filter((c) => !c._deleted && c.id);
     // Only insert rows that have at least one meaningful field — empty rows linger locally.
@@ -761,11 +744,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
       await supabase.from("contracts").delete().in("id", toDelete.map((c) => c.id!));
     }
 
-    const fileChangedIds: string[] = [];
-
     for (const c of toUpdate) {
-      const old = prev.find((p) => p.id === c.id);
-      const fileChanged = !!old && old.box_file_id !== c.box_file_id;
       await supabase
         .from("contracts")
         .update({
@@ -775,10 +754,8 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
           start_date: c.start_date,
           end_date: c.end_date,
           box_file_id: c.box_file_id,
-          ...(fileChanged ? { extracted_text: null, extracted_at: null } : {}),
         })
         .eq("id", c.id!);
-      if (fileChanged && c.box_file_id && c.id) fileChangedIds.push(c.id);
     }
 
     const insertedByLocal = new Map<string, string>();
@@ -801,13 +778,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
         .single();
       if (data?.id && c._localId) {
         insertedByLocal.set(c._localId, data.id);
-        if (c.box_file_id) fileChangedIds.push(data.id);
       }
-    }
-
-    // Fire-and-forget text extraction for new/changed files.
-    for (const id of fileChangedIds) {
-      fetch(`/api/contracts/${id}/extract-text`, { method: "POST" }).catch(() => {});
     }
 
     // Update local state: remove _deleted rows, fill in new ids.
@@ -839,29 +810,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     enabled: !loading && contractsLoaded,
     save: saveContractsSnapshot,
   });
-
-  async function handleAskContract(rowIndex: number) {
-    const c = contracts[rowIndex];
-    if (!c.id) return;
-    setAskLoading(true);
-    setAskError(null);
-    setAskAnswer(null);
-    try {
-      const res = await fetch(`/api/contracts/${c.id}/ask`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: askInput }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setAskError(data.error || "Failed to ask.");
-      } else {
-        setAskAnswer(data.answer);
-      }
-    } finally {
-      setAskLoading(false);
-    }
-  }
 
   type ClientAutoSaveSnapshot = {
     form: typeof emptyForm;
@@ -1428,7 +1376,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                 <tr className="border-b border-zinc-200 bg-zinc-50/50">
                   <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Project</th>
                   <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Staff Level</th>
-                  <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Status</th>
                   <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Start Year</th>
                   <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">End Year</th>
                   <th className="px-3 py-2.5 text-center text-xs font-medium text-zinc-500 w-10"></th>
@@ -1464,15 +1411,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                             options={staffLevelOptions}
                             placeholder="Staff level"
                             manageTable="list_staff_levels"
-                          />
-                        </td>
-                        <td className="px-2 py-1.5">
-                          <PicklistSelect
-                            value={credit.credit_status}
-                            onChange={(v) => updateCredit(index, "credit_status", v)}
-                            options={creditStatusOptions}
-                            placeholder="--"
-                            manageTable="list_credit_statuses"
                           />
                         </td>
                         <td className="px-2 py-1.5">
@@ -1545,14 +1483,13 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                     <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Start Date</th>
                     <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">End Date</th>
                     <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Contract</th>
-                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Ask</th>
                     <th className="px-3 py-2.5"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {contracts.filter((c) => !c._deleted).length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="px-3 py-12 text-center text-sm text-zinc-400">
+                      <td colSpan={7} className="px-3 py-12 text-center text-sm text-zinc-400">
                         No contracts yet.
                       </td>
                     </tr>
@@ -1636,22 +1573,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                               </button>
                             )}
                           </td>
-                          <td className="px-2 py-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAskOpenForRow(askOpenForRow === index ? null : index);
-                                setAskInput("");
-                                setAskAnswer(null);
-                                setAskError(null);
-                              }}
-                              disabled={!contract.id || !contract.extracted_at}
-                              title={!contract.extracted_at ? "Contract text not yet extracted" : "Ask AI about this contract"}
-                              className="text-zinc-500 hover:text-black transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                            >
-                              <MessageCircle className="h-4 w-4" />
-                            </button>
-                          </td>
                           <td className="px-2 py-1.5 text-center">
                             <button
                               onClick={() => deleteContractRow(index)}
@@ -1669,42 +1590,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
             </div>
           )}
 
-          {/* AI Q&A panel — appears under the table when active */}
-          {askOpenForRow !== null && contracts[askOpenForRow]?.id && (
-            <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 p-4">
-              <p className="mb-2 text-xs font-medium text-zinc-700">
-                Ask about this contract
-              </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={askInput}
-                  onChange={(e) => setAskInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && askInput.trim().length >= 3 && !askLoading) {
-                      handleAskContract(askOpenForRow);
-                    }
-                  }}
-                  placeholder='e.g. "What does the contract say about year 3?"'
-                  className="flex-1 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-zinc-400"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleAskContract(askOpenForRow)}
-                  disabled={askLoading || askInput.trim().length < 3}
-                  className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-                >
-                  {askLoading ? "Asking..." : "Ask"}
-                </button>
-              </div>
-              {askError && <p className="mt-2 text-xs text-red-500">{askError}</p>}
-              {askAnswer && (
-                <div className="mt-3 rounded-md border border-zinc-200 bg-white p-3 text-sm text-zinc-700 whitespace-pre-wrap">
-                  {askAnswer}
-                </div>
-              )}
-            </div>
-          )}
 
           <div className="mt-3 flex items-center gap-3">
             <button

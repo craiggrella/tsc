@@ -120,7 +120,7 @@ export function OmniSearch() {
             supabase
               .from("contracts")
               .select("id, contract_name, client_id, client:clients!client_id(full_name)")
-              .or(`contract_name.ilike.${pattern},extracted_text.ilike.${pattern}`)
+              .ilike("contract_name", pattern)
               .limit(5),
           ]);
 

@@ -51,20 +51,21 @@ export function ClientsClient({ userId }: ClientsClientProps) {
           .order("full_name"),
         supabase
           .from("client_credits")
-          .select("client_id, project_name, project:projects!project_id(name)")
-          .eq("credit_status", "current"),
+          .select("client_id, project_name, end_year, start_year, project:projects!project_id(name)")
+          .order("start_year", { ascending: false, nullsFirst: false }),
       ]);
 
-      // Build map of client_id -> current project name
+      // Build map of client_id -> most recent project name (top entry per client by start_year DESC)
       const currentProjectMap = new Map<string, string>();
       for (const c of creditsData || []) {
-        const r = c as unknown as { client_id: string; project_name: string; project: { name: string } | null };
+        const r = c as unknown as {
+          client_id: string;
+          project_name: string;
+          project: { name: string } | null;
+        };
         const name = r.project?.name || r.project_name;
         if (name && !currentProjectMap.has(r.client_id)) {
           currentProjectMap.set(r.client_id, name);
-        } else if (name && currentProjectMap.has(r.client_id)) {
-          // Multiple current projects - append
-          currentProjectMap.set(r.client_id, currentProjectMap.get(r.client_id) + ", " + name);
         }
       }
 
