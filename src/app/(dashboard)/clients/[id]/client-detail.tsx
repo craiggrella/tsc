@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Loader2, ExternalLink, Plus, Trash2, Copy, Check as CheckIcon, FileText, MessageCircle } from "lucide-react";
@@ -57,6 +57,7 @@ interface CreditRow {
 
 interface ContractRow {
   id?: string;
+  _localId?: string; // stable client-side id for matching new rows pre-insert
   project_id: string | null;
   project_name: string;
   staff_level: string;
@@ -153,7 +154,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   // Contracts
   const [contracts, setContracts] = useState<ContractRow[]>([]);
   const [contractsLoaded, setContractsLoaded] = useState(false);
-  const [contractsSaving, setContractsSaving] = useState(false);
   const [contractFilePickerForRow, setContractFilePickerForRow] = useState<number | null>(null);
   const [contractPreviewFile, setContractPreviewFile] = useState<{ id: string; name: string } | null>(null);
   const [askOpenForRow, setAskOpenForRow] = useState<number | null>(null);
@@ -350,6 +350,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
         };
       });
       setContracts(rows);
+      prevContractsSnapRef.current = rows;
       setContractsLoaded(true);
     }
     loadContracts();
@@ -666,6 +667,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     setContracts((prev) => [
       ...prev,
       {
+        _localId: crypto.randomUUID(),
         project_id: null,
         project_name: "",
         staff_level: "",
@@ -699,72 +701,117 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     );
   }
 
-  async function saveContracts() {
-    setContractsSaving(true);
-    try {
-      const toDelete = contracts.filter((c) => c._deleted && c.id);
-      const toUpdate = contracts.filter((c) => !c._deleted && c.id);
-      const toInsert = contracts.filter((c) => !c._deleted && !c.id);
+  // Track previous saved snapshot for detecting box_file_id changes (re-extract text)
+  const prevContractsSnapRef = useRef<ContractRow[]>([]);
 
-      if (toDelete.length > 0) {
-        await supabase.from("contracts").delete().in("id", toDelete.map((c) => c.id!));
-      }
+  // Skip the extra autoSave pass that fires after we update state with new ids
+  const skipNextContractsSaveRef = useRef(false);
 
-      const newlyExtractedIds: string[] = [];
-
-      for (const c of toUpdate) {
-        // Detect box_file_id change so we can re-extract text
-        const orig = contracts.find((x) => x.id === c.id);
-        const fileChanged = orig && orig.box_file_id !== c.box_file_id;
-
-        await supabase
-          .from("contracts")
-          .update({
-            project_id: c.project_id,
-            staff_level: c.staff_level || null,
-            status: c.status,
-            start_date: c.start_date,
-            end_date: c.end_date,
-            box_file_id: c.box_file_id,
-            // Clear extracted_text when file changes — fresh extraction will rewrite it
-            ...(fileChanged ? { extracted_text: null, extracted_at: null } : {}),
-          })
-          .eq("id", c.id!);
-
-        if (fileChanged && c.box_file_id && c.id) newlyExtractedIds.push(c.id);
-      }
-
-      for (const c of toInsert) {
-        const projectName =
-          c.project_name || projects.find((p) => p.id === c.project_id)?.name || "Untitled Contract";
-        const { data } = await supabase
-          .from("contracts")
-          .insert({
-            client_id: clientId,
-            project_id: c.project_id,
-            contract_name: projectName,
-            staff_level: c.staff_level || null,
-            status: c.status,
-            start_date: c.start_date,
-            end_date: c.end_date,
-            box_file_id: c.box_file_id,
-          })
-          .select("id")
-          .single();
-        if (data?.id && c.box_file_id) newlyExtractedIds.push(data.id);
-      }
-
-      // Fire-and-forget text extraction for new/changed files.
-      for (const id of newlyExtractedIds) {
-        fetch(`/api/contracts/${id}/extract-text`, { method: "POST" }).catch(() => {});
-      }
-
-      // Reload contracts
-      setContractsLoaded(false);
-    } finally {
-      setContractsSaving(false);
-    }
+  function rowIsEmpty(c: ContractRow): boolean {
+    return (
+      !c.project_id &&
+      !c.staff_level &&
+      !c.status &&
+      !c.start_date &&
+      !c.end_date &&
+      !c.box_file_id
+    );
   }
+
+  const saveContractsSnapshot = useCallback(async (snap: ContractRow[]) => {
+    if (skipNextContractsSaveRef.current) {
+      skipNextContractsSaveRef.current = false;
+      return;
+    }
+
+    const prev = prevContractsSnapRef.current;
+    const toDelete = snap.filter((c) => c._deleted && c.id);
+    const toUpdate = snap.filter((c) => !c._deleted && c.id);
+    // Only insert rows that have at least one meaningful field — empty rows linger locally.
+    const toInsert = snap.filter((c) => !c._deleted && !c.id && !rowIsEmpty(c));
+
+    if (toDelete.length > 0) {
+      await supabase.from("contracts").delete().in("id", toDelete.map((c) => c.id!));
+    }
+
+    const fileChangedIds: string[] = [];
+
+    for (const c of toUpdate) {
+      const old = prev.find((p) => p.id === c.id);
+      const fileChanged = !!old && old.box_file_id !== c.box_file_id;
+      await supabase
+        .from("contracts")
+        .update({
+          project_id: c.project_id,
+          staff_level: c.staff_level || null,
+          status: c.status,
+          start_date: c.start_date,
+          end_date: c.end_date,
+          box_file_id: c.box_file_id,
+          ...(fileChanged ? { extracted_text: null, extracted_at: null } : {}),
+        })
+        .eq("id", c.id!);
+      if (fileChanged && c.box_file_id && c.id) fileChangedIds.push(c.id);
+    }
+
+    const insertedByLocal = new Map<string, string>();
+    for (const c of toInsert) {
+      const projectName =
+        c.project_name || projects.find((p) => p.id === c.project_id)?.name || "Untitled Contract";
+      const { data } = await supabase
+        .from("contracts")
+        .insert({
+          client_id: clientId,
+          project_id: c.project_id,
+          contract_name: projectName,
+          staff_level: c.staff_level || null,
+          status: c.status,
+          start_date: c.start_date,
+          end_date: c.end_date,
+          box_file_id: c.box_file_id,
+        })
+        .select("id")
+        .single();
+      if (data?.id && c._localId) {
+        insertedByLocal.set(c._localId, data.id);
+        if (c.box_file_id) fileChangedIds.push(data.id);
+      }
+    }
+
+    // Fire-and-forget text extraction for new/changed files.
+    for (const id of fileChangedIds) {
+      fetch(`/api/contracts/${id}/extract-text`, { method: "POST" }).catch(() => {});
+    }
+
+    // Update local state: remove _deleted rows, fill in new ids.
+    if (toDelete.length > 0 || insertedByLocal.size > 0) {
+      skipNextContractsSaveRef.current = true;
+      setContracts((current) =>
+        current
+          .filter((r) => !r._deleted)
+          .map((r) =>
+            r._localId && insertedByLocal.has(r._localId)
+              ? { ...r, id: insertedByLocal.get(r._localId)! }
+              : r
+          )
+      );
+    }
+
+    prevContractsSnapRef.current = snap.filter((c) => !c._deleted);
+  }, [supabase, clientId, projects]);
+
+  const restoreContracts = useCallback((snap: ContractRow[]) => {
+    setContracts(snap);
+  }, []);
+
+  const contractsAutoSave = useAutoSave<ContractRow[]>({
+    recordId: clientId,
+    tableName: "contracts",
+    state: contracts,
+    restore: restoreContracts,
+    enabled: !loading && contractsLoaded,
+    save: saveContractsSnapshot,
+  });
 
   async function handleAskContract(rowIndex: number) {
     const c = contracts[rowIndex];
@@ -1348,8 +1395,8 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
       {/* Credits Tab */}
       {activeTab === "credits" && (
         <div>
-          <div className="overflow-x-auto rounded-lg border border-zinc-200">
-            <table className="w-full min-w-[700px] text-sm">
+          <div className="rounded-lg border border-zinc-200">
+            <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-zinc-200 bg-zinc-50/50">
                   <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Project</th>
@@ -1463,8 +1510,8 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
               <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-zinc-200">
-              <table className="w-full min-w-[900px] text-sm">
+            <div className="rounded-lg border border-zinc-200">
+              <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-zinc-200 bg-zinc-50/50">
                     <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Project</th>
@@ -1645,14 +1692,13 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
               <Plus className="h-3 w-3" />
               Add Contract
             </button>
-            <button
-              type="button"
-              onClick={saveContracts}
-              disabled={contractsSaving}
-              className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-            >
-              {contractsSaving ? "Saving..." : "Save Contracts"}
-            </button>
+            <SavedIndicator
+              saving={contractsAutoSave.saving}
+              savedAt={contractsAutoSave.savedAt}
+              error={contractsAutoSave.error}
+              hasUndo={contractsAutoSave.hasUndo}
+              onUndo={contractsAutoSave.undo}
+            />
           </div>
 
           {/* Box file picker — single picker shared across rows */}
