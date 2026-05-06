@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PicklistSelect } from "./picklist-select";
 
 interface DetailPanelProps {
   open: boolean;
@@ -128,20 +129,49 @@ export function Input({ className, ...props }: InputProps) {
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
   options: { value: string; label: string }[];
   placeholder?: string;
+  /** When set, renders a custom dropdown with inline search + add. */
+  manageTable?: string;
 }
 
 export function Select({
   options,
   placeholder,
   className,
+  manageTable,
+  value,
+  onChange,
+  disabled,
   ...props
 }: SelectProps) {
+  // Picklist-backed → render PicklistSelect with onChange shim so existing
+  // event-style consumers keep working unchanged.
+  if (manageTable) {
+    return (
+      <PicklistSelect
+        value={(value as string | undefined) ?? null}
+        onChange={(v) => {
+          onChange?.({
+            target: { value: v ?? "" },
+            currentTarget: { value: v ?? "" },
+          } as unknown as React.ChangeEvent<HTMLSelectElement>);
+        }}
+        options={options}
+        placeholder={placeholder}
+        manageTable={manageTable}
+        className={className}
+        disabled={disabled}
+      />
+    );
+  }
   return (
     <select
       className={cn(
         "w-full rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm text-black outline-none hover:border-zinc-300 focus:border-zinc-400 transition-colors",
         className
       )}
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
       {...props}
     >
       {placeholder && (

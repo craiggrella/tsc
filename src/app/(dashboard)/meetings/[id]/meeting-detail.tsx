@@ -395,6 +395,7 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
             onChange={(e) => setForm({ ...form, location_type: e.target.value || null })}
             options={toSelectOptions(locationTypes)}
             placeholder="Select..."
+            manageTable="list_location_types"
           />
         </Field>
         {(form.location_type === "virtual" || form.location_type === "hybrid") && (

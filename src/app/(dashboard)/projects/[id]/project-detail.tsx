@@ -565,6 +565,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
               value={form.status}
               onChange={(e) => setForm({ ...form, status: e.target.value as string })}
               options={STATUSES}
+              manageTable="list_project_statuses"
             />
           </Field>
           {/* Companies with designation */}

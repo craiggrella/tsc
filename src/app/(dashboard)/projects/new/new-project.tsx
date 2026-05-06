@@ -131,6 +131,7 @@ export function NewProject({ userId }: NewProjectProps) {
             value={form.status}
             onChange={(e) => setForm({ ...form, status: e.target.value as string })}
             options={STATUSES}
+            manageTable="list_project_statuses"
           />
         </Field>
         {/* Companies with designation */}

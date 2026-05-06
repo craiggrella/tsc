@@ -304,6 +304,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
               onChange={(e) => setForm({ ...form, material_type: e.target.value || null })}
               options={MATERIAL_TYPES}
               placeholder="Select..."
+              manageTable="list_material_types"
             />
           </Field>
           <Field label="Format">
@@ -312,6 +313,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
               onChange={(e) => setForm({ ...form, format: e.target.value || null })}
               options={FORMATS}
               placeholder="Select..."
+              manageTable="list_formats"
             />
           </Field>
           <Field label="Status">
@@ -319,6 +321,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
               value={form.status}
               onChange={(e) => setForm({ ...form, status: e.target.value as string })}
               options={STATUSES}
+              manageTable="list_statuses"
             />
           </Field>
         </div>
@@ -329,6 +332,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
               onChange={(e) => setForm({ ...form, genre: e.target.value || null })}
               options={GENRES}
               placeholder="Select..."
+              manageTable="list_genres"
             />
           </Field>
           <Field label="Sub-genre">
