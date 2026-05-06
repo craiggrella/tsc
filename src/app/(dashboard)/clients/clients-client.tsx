@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Plus, Search, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toPersonName } from "@/lib/format-name";
+import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { PicklistSelect } from "@/components/shared/picklist-select";
 
 interface CompanyData {
   id: string;
@@ -34,6 +36,11 @@ export function ClientsClient({ userId }: ClientsClientProps) {
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [search, setSearch] = useState("");
+  const [projectFilter, setProjectFilter] = useState("");
+  const [staffLevelFilter, setStaffLevelFilter] = useState<string | null>(null);
+
+  const staffLevelItems = usePicklist("list_staff_levels");
+  const staffLevelOptions = useMemo(() => toSelectOptions(staffLevelItems), [staffLevelItems]);
 
   useEffect(() => {
     async function load() {
@@ -73,15 +80,32 @@ export function ClientsClient({ userId }: ClientsClientProps) {
   }, []);
 
   const filtered = useMemo(() => {
-    if (!search) return clients;
-    const q = search.toLowerCase();
-    return clients.filter(
-      (c) =>
-        c.full_name.toLowerCase().includes(q) ||
-        c.company?.name.toLowerCase().includes(q) ||
-        c.current_project?.toLowerCase().includes(q)
-    );
-  }, [clients, search]);
+    let list = clients;
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter(
+        (c) =>
+          c.full_name.toLowerCase().includes(q) ||
+          c.company?.name.toLowerCase().includes(q)
+      );
+    }
+    if (projectFilter) {
+      const q = projectFilter.toLowerCase();
+      list = list.filter((c) => c.current_project?.toLowerCase().includes(q));
+    }
+    if (staffLevelFilter) {
+      const matchLabel = staffLevelOptions.find((o) => o.value === staffLevelFilter)?.label;
+      list = list.filter((c) => {
+        if (!c.staff_level) return false;
+        const cl = c.staff_level.toLowerCase();
+        return (
+          cl === staffLevelFilter.toLowerCase() ||
+          (matchLabel && cl === matchLabel.toLowerCase())
+        );
+      });
+    }
+    return list;
+  }, [clients, search, projectFilter, staffLevelFilter, staffLevelOptions]);
 
   if (loading) return <div className="flex items-center justify-center py-20"><p className="text-sm text-zinc-400">Loading...</p></div>;
 
@@ -101,14 +125,32 @@ export function ClientsClient({ userId }: ClientsClientProps) {
         </button>
       </div>
 
-      {/* Search */}
-      <div className="mt-4 relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search clients..."
-          className="w-full rounded-md border border-zinc-200 bg-white py-1.5 pl-9 pr-3 text-sm outline-none placeholder:text-zinc-400 hover:border-zinc-300 focus:border-zinc-400 transition-colors"
+      {/* Filters */}
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Filter by name..."
+            className="w-full rounded-md border border-zinc-200 bg-white py-1.5 pl-9 pr-3 text-sm outline-none placeholder:text-zinc-400 hover:border-zinc-300 focus:border-zinc-400 transition-colors"
+          />
+        </div>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 pointer-events-none" />
+          <input
+            value={projectFilter}
+            onChange={(e) => setProjectFilter(e.target.value)}
+            placeholder="Filter by project..."
+            className="w-full rounded-md border border-zinc-200 bg-white py-1.5 pl-9 pr-3 text-sm outline-none placeholder:text-zinc-400 hover:border-zinc-300 focus:border-zinc-400 transition-colors"
+          />
+        </div>
+        <PicklistSelect
+          value={staffLevelFilter}
+          onChange={(v) => setStaffLevelFilter(v)}
+          options={staffLevelOptions}
+          placeholder="Filter by staff level..."
+          manageTable="list_staff_levels"
         />
       </div>
 
