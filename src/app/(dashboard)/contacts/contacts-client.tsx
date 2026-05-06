@@ -6,6 +6,7 @@ import { Plus, Search, Contact } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatPhone } from "@/lib/utils";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { toPersonName } from "@/lib/format-name";
 import { MultiFilterDropdown } from "@/components/shared/multi-filter-dropdown";
 import { MailIconButton } from "@/components/shared/email-link";
 
@@ -284,7 +285,7 @@ export function ContactsClient({ userId }: ContactsClientProps) {
                   onClick={() => router.push(`/contacts/${contact.id}`)}
                   className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                 >
-                  <td className="px-3 py-2.5 font-medium text-black whitespace-nowrap">{contact.full_name}</td>
+                  <td className="px-3 py-2.5 font-medium text-black whitespace-nowrap">{toPersonName(contact.full_name)}</td>
                   <td className="px-3 py-2.5 text-zinc-500 whitespace-nowrap">{contact.title || "\u2014"}</td>
                   <td className="px-3 py-2.5 text-zinc-700 whitespace-nowrap">{contact.company?.name || "\u2014"}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap">

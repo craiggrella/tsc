@@ -13,6 +13,7 @@ import {
 } from "@/components/shared/relation-picker";
 import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { quickCreatePerson } from "@/lib/quick-create-person";
 import type { MeetingStatus } from "@/types/database";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { SavedIndicator } from "@/components/shared/saved-indicator";
@@ -350,6 +351,8 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
             onChange={(ids) => setForm({ ...form, person_ids: ids })}
             options={personOptions}
             placeholder="Search contacts..."
+            onAdd={(name) => quickCreatePerson(supabase, name, userId)}
+            addLabel="Create"
           />
         </Field>
         <Field label="Our Team">

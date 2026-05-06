@@ -28,6 +28,7 @@ import {
   type SocialRecord,
 } from "@/components/shared/contact-info-editor";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { toPersonName } from "@/lib/format-name";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { SavedIndicator } from "@/components/shared/saved-indicator";
 
@@ -633,7 +634,13 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     enabled: !loading,
     save: async (snap) => {
       const { manager_ids, ...clientPayload } = snap.form;
-      await supabase.from("clients").update(clientPayload).eq("id", clientId);
+      const cleaned = {
+        ...clientPayload,
+        first_name: clientPayload.first_name ? toPersonName(clientPayload.first_name) : clientPayload.first_name,
+        last_name: clientPayload.last_name ? toPersonName(clientPayload.last_name) : clientPayload.last_name,
+        full_name: clientPayload.full_name ? toPersonName(clientPayload.full_name) : clientPayload.full_name,
+      };
+      await supabase.from("clients").update(cleaned).eq("id", clientId);
 
       // Sync client_managers join table
       const { data: existing } = await supabase
@@ -739,15 +746,24 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-semibold tracking-tight text-black">
-          {form.full_name || "Untitled Client"}
+          {toPersonName(form.full_name) || "Untitled Client"}
         </h1>
-        <SavedIndicator
-          saving={autoSave.saving}
-          savedAt={autoSave.savedAt}
-          error={autoSave.error}
-          hasUndo={autoSave.hasUndo}
-          onUndo={autoSave.undo}
-        />
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/materials/new?client=${clientId}`}
+            className="inline-flex items-center gap-1.5 rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 transition-colors"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add Material
+          </Link>
+          <SavedIndicator
+            saving={autoSave.saving}
+            savedAt={autoSave.savedAt}
+            error={autoSave.error}
+            hasUndo={autoSave.hasUndo}
+            onUndo={autoSave.undo}
+          />
+        </div>
       </div>
 
       {/* Tabs */}

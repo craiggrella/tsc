@@ -26,6 +26,7 @@ import {
   type SocialRecord,
 } from "@/components/shared/contact-info-editor";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { toPersonName } from "@/lib/format-name";
 
 interface CompanyData {
   id: string;
@@ -92,9 +93,15 @@ export function NewContact({ userId }: NewContactProps) {
     if (!form.full_name.trim()) return;
     setSaving(true);
     try {
+      const cleaned = {
+        ...form,
+        first_name: form.first_name ? toPersonName(form.first_name) : form.first_name,
+        last_name: form.last_name ? toPersonName(form.last_name) : form.last_name,
+        full_name: toPersonName(form.full_name),
+      };
       const { data } = await supabase
         .from("people")
-        .insert({ ...form })
+        .insert(cleaned)
         .select("id")
         .single();
 

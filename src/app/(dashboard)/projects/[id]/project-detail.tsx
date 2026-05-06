@@ -16,6 +16,7 @@ import { usePicklist, toSelectOptions } from "@/lib/picklists";
 import { formatPhone } from "@/lib/utils";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { SavedIndicator } from "@/components/shared/saved-indicator";
+import { quickCreatePerson } from "@/lib/quick-create-person";
 
 interface PersonData {
   id: string;
@@ -641,6 +642,8 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
                 }}
                 options={personOptions}
                 placeholder="Add people..."
+                onAdd={(name) => quickCreatePerson(supabase, name, userId)}
+                addLabel="Create"
               />
             </Field>
           </div>

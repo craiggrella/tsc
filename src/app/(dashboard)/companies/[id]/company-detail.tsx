@@ -12,6 +12,7 @@ import { MailIconButton } from "@/components/shared/email-link";
 import { MultiRelationPicker, type RelationOption } from "@/components/shared/relation-picker";
 import { formatPhone } from "@/lib/utils";
 import { usePicklist, toRelationOptions, toSelectOptions } from "@/lib/picklists";
+import { toCompanyName } from "@/lib/format-name";
 import {
   PhoneSection,
   EmailSection,
@@ -390,7 +391,11 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
     restore: autoSaveRestore,
     enabled: !loading,
     save: async (snap) => {
-      await supabase.from("companies").update({ ...snap.form }).eq("id", companyId);
+      const cleaned = {
+        ...snap.form,
+        name: snap.form.name ? toCompanyName(snap.form.name) : snap.form.name,
+      };
+      await supabase.from("companies").update(cleaned).eq("id", companyId);
       await Promise.all([
         syncPhones("company" as "person", companyId, snap.phones, origPhoneIds),
         syncEmails("company" as "person", companyId, snap.emails, origEmailIds),

@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendTransactionalEmail } from "@/lib/send-email";
+import { toPersonName } from "@/lib/format-name";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { email, first_name, last_name, role, org_id } = body;
+  const { email, role, org_id } = body;
+  const first_name = body.first_name ? toPersonName(body.first_name) : body.first_name;
+  const last_name = body.last_name ? toPersonName(body.last_name) : body.last_name;
 
   const origin = request.headers.get("origin") || new URL(request.url).origin;
   const redirectTo = `${origin}/auth/reset-password`;

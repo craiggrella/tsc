@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Eye } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -35,6 +35,8 @@ interface NewMaterialProps {
 export function NewMaterial({ userId }: NewMaterialProps) {
   const supabase = createClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const presetClientId = searchParams.get("client");
   const materialTypesItems = usePicklist("list_material_types");
   const MATERIAL_TYPES = toSelectOptions(materialTypesItems);
   const statusItems = usePicklist("list_statuses");
@@ -45,7 +47,9 @@ export function NewMaterial({ userId }: NewMaterialProps) {
   const GENRES = toSelectOptions(genreItems);
   const subGenreItems = usePicklist("list_sub_genres");
   const SUB_GENRES = toRelationOptions(subGenreItems);
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(() =>
+    presetClientId ? { ...emptyForm, client_id: presetClientId } : emptyForm
+  );
   const [saving, setSaving] = useState(false);
 
   const [clients, setClients] = useState<{ id: string; full_name: string }[]>([]);

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Search, Building2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { toCompanyName } from "@/lib/format-name";
 import { MultiFilterDropdown } from "@/components/shared/multi-filter-dropdown";
 
 interface CompanyRow {
@@ -148,7 +149,7 @@ export function CompaniesClient({ userId }: CompaniesClientProps) {
                   onClick={() => router.push(`/companies/${company.id}`)}
                   className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                 >
-                  <td className="px-3 py-2.5 font-medium text-black">{company.name}</td>
+                  <td className="px-3 py-2.5 font-medium text-black">{toCompanyName(company.name)}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
                     {company.buyer_type ? (
                       <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">

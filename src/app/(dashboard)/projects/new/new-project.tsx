@@ -11,6 +11,7 @@ import {
 } from "@/components/shared/relation-picker";
 import { Field, Input, Select } from "@/components/shared/detail-panel";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { quickCreatePerson } from "@/lib/quick-create-person";
 
 interface ProjectCompanyRow {
   company_id: string;
@@ -184,6 +185,8 @@ export function NewProject({ userId }: NewProjectProps) {
             onChange={(ids) => setForm({ ...form, person_ids: ids })}
             options={personOptions}
             placeholder="Select people..."
+            onAdd={(name) => quickCreatePerson(supabase, name, userId)}
+            addLabel="Create"
           />
         </Field>
       </div>

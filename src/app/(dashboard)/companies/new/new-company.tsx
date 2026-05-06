@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Field, Input, Select, Textarea } from "@/components/shared/detail-panel";
 import { PicklistSelect } from "@/components/shared/picklist-select";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { toCompanyName } from "@/lib/format-name";
 
 const COMPANY_TYPES = [
   "Pod",
@@ -52,9 +53,10 @@ export function NewCompany({ userId }: NewCompanyProps) {
     if (!form.name.trim()) return;
     setSaving(true);
     try {
+      const cleaned = { ...form, name: toCompanyName(form.name) };
       const { data } = await supabase
         .from("companies")
-        .insert({ ...form })
+        .insert(cleaned)
         .select("id")
         .single();
       if (data) {

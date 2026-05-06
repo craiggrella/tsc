@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Search, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { toPersonName } from "@/lib/format-name";
 
 interface CompanyData {
   id: string;
@@ -136,7 +137,7 @@ export function ClientsClient({ userId }: ClientsClientProps) {
                   onClick={() => router.push(`/clients/${client.id}`)}
                   className="border-b border-zinc-100 last:border-0 cursor-pointer hover:bg-zinc-50/50 transition-colors"
                 >
-                  <td className="px-3 py-2.5 font-medium text-black">{client.full_name}</td>
+                  <td className="px-3 py-2.5 font-medium text-black">{toPersonName(client.full_name)}</td>
                   <td className="px-3 py-2.5 text-zinc-700">{client.current_project || "\u2014"}</td>
                   <td className="px-3 py-2.5 text-zinc-500">{client.staff_level || "\u2014"}</td>
                 </tr>

@@ -30,6 +30,7 @@ import {
   type SocialRecord,
 } from "@/components/shared/contact-info-editor";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { toPersonName } from "@/lib/format-name";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { SavedIndicator } from "@/components/shared/saved-indicator";
 
@@ -423,7 +424,13 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
     restore: autoSaveRestore,
     enabled: !loading,
     save: async (snap) => {
-      await supabase.from("people").update({ ...snap.form }).eq("id", contactId);
+      const cleaned = {
+        ...snap.form,
+        first_name: snap.form.first_name ? toPersonName(snap.form.first_name) : snap.form.first_name,
+        last_name: snap.form.last_name ? toPersonName(snap.form.last_name) : snap.form.last_name,
+        full_name: snap.form.full_name ? toPersonName(snap.form.full_name) : snap.form.full_name,
+      };
+      await supabase.from("people").update(cleaned).eq("id", contactId);
       await Promise.all([
         syncPhones("person", contactId, snap.phones, origPhoneIds),
         syncEmails("person", contactId, snap.emails, origEmailIds),
