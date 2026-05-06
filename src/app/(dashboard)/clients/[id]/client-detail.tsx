@@ -1162,18 +1162,18 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                           {selectedNotMet === p.id && (
                             <div className="ml-2 mt-1 mb-2 pl-2 border-l-2 border-zinc-200">
                               {!selectedPersonDetail ? (
-                                <p className="text-[10px] text-zinc-400">Loading...</p>
+                                <p className="text-2xs text-zinc-400">Loading...</p>
                               ) : selectedPersonDetail.materials.length === 0 ? (
-                                <p className="text-[10px] text-zinc-400">No shared submissions.</p>
+                                <p className="text-2xs text-zinc-400">No shared submissions.</p>
                               ) : (
                                 <div className="space-y-1">
                                   {selectedPersonDetail.materials.map((mat, i) => (
-                                    <div key={i} className="text-[11px] flex items-center justify-between">
+                                    <div key={i} className="text-2xs flex items-center justify-between">
                                       <span className="text-zinc-700">{mat.title}</span>
                                       <div className="flex items-center gap-2">
                                         {mat.date && <span className="text-zinc-400">{new Date(mat.date).toLocaleDateString()}</span>}
                                         {mat.response ? (
-                                          <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                                          <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-medium ${
                                             mat.response === "love" ? "bg-emerald-100 text-emerald-700" :
                                             mat.response === "like" ? "bg-blue-100 text-blue-700" :
                                             mat.response === "meh" ? "bg-amber-100 text-amber-700" :
@@ -1182,7 +1182,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                                             {mat.response.charAt(0).toUpperCase() + mat.response.slice(1)}
                                           </span>
                                         ) : (
-                                          <span className="text-[10px] text-zinc-400">No response</span>
+                                          <span className="text-2xs text-zinc-400">No response</span>
                                         )}
                                       </div>
                                     </div>
@@ -1289,7 +1289,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                       <td className="px-3 py-2.5 text-zinc-600">{row.project_name || "\u2014"}</td>
                       <td className="px-3 py-2.5">
                         {row.response ? (
-                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-2xs font-medium ${
                             row.response === "love" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
                             row.response === "like" ? "bg-blue-50 text-blue-700 border-blue-200" :
                             row.response === "meh" ? "bg-amber-50 text-amber-700 border-amber-200" :
@@ -1346,7 +1346,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                       <td className="px-3 py-2.5 text-zinc-600 whitespace-nowrap">{m.genre || "\u2014"}</td>
                       <td className="px-3 py-2.5 text-zinc-600 whitespace-nowrap">{m.sub_genre || "\u2014"}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
-                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-2xs font-medium ${
                           m.status === "not_yet_reviewed" ? "bg-zinc-50 text-zinc-500 border-zinc-200" :
                           m.status === "in_review" ? "bg-blue-50 text-blue-700 border-blue-200" :
                           m.status === "coverage_available" ? "bg-purple-50 text-purple-700 border-purple-200" :
@@ -1557,7 +1557,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                                 <button
                                   type="button"
                                   onClick={() => setContractFilePickerForRow(index)}
-                                  className="text-[10px] text-zinc-400 hover:text-zinc-600 transition-colors"
+                                  className="text-2xs text-zinc-400 hover:text-zinc-600 transition-colors"
                                   title="Replace"
                                 >
                                   Replace
@@ -1744,7 +1744,7 @@ function MacrosSection({
 
   return (
     <div>
-      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+      <p className="mb-1.5 text-2xs font-medium uppercase tracking-wider text-zinc-400">
         Macros
       </p>
       <div className="space-y-3">
@@ -1792,7 +1792,7 @@ function MacrosSection({
               rows={3}
               className="w-full resize-y rounded border border-zinc-100 bg-zinc-50/50 px-2 py-1.5 text-sm text-zinc-800 outline-none focus:border-zinc-300 placeholder:text-zinc-300"
             />
-            <p className="mt-1 text-[10px] text-zinc-400">
+            <p className="mt-1 text-2xs text-zinc-400">
               {formatTimestamp(macro.updated_at)}
             </p>
           </div>

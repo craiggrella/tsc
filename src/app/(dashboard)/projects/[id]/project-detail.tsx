@@ -518,14 +518,14 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
                       </div>
                     )}
                     <p className="truncate text-xs font-medium text-black">{c.Title}</p>
-                    <p className="text-[10px] text-zinc-500">
+                    <p className="text-2xs text-zinc-500">
                       {c.Year} • {c.Type}
                     </p>
                   </button>
                 ))}
               </div>
               <div className="mt-4 pt-3 border-t border-zinc-200">
-                <p className="text-[11px] text-zinc-500 mb-2">Not the right ones? Search by a different title:</p>
+                <p className="text-2xs text-zinc-500 mb-2">Not the right ones? Search by a different title:</p>
                 <ManualPosterSearch
                   value={manualSearchInput}
                   onChange={setManualSearchInput}
@@ -570,7 +570,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
           </Field>
           {/* Companies with designation */}
           <div>
-            <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-400">Companies</p>
+            <p className="mb-1.5 text-2xs font-medium uppercase tracking-wider text-zinc-400">Companies</p>
             <div className="space-y-1.5">
               {projectCompanies.map((pc, i) => (
                 <div key={pc.id || `new-${i}`} className="group flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-zinc-50 transition-colors">
@@ -678,7 +678,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
                       <td className="px-3 py-2.5 text-zinc-500 whitespace-nowrap">{person.title || "\u2014"}</td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         {person.exec_level ? (
-                          <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                          <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-2xs font-medium text-zinc-600">
                             {person.exec_level.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                           </span>
                         ) : "\u2014"}
@@ -688,7 +688,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         {person.buyer_type ? (
-                          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-2xs font-medium text-amber-700">
                             {person.buyer_type}
                           </span>
                         ) : "\u2014"}
@@ -777,7 +777,7 @@ export function ProjectDetail({ projectId, userId }: ProjectDetailProps) {
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         {s.response ? (
-                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-2xs font-medium ${
                             s.response === "love" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
                             s.response === "like" ? "bg-blue-50 text-blue-700 border-blue-200" :
                             s.response === "meh" ? "bg-amber-50 text-amber-700 border-amber-200" :
@@ -885,7 +885,7 @@ function PosterBlock({
         <button
           type="button"
           onClick={onReplace}
-          className="mt-1 text-[10px] text-zinc-400 hover:text-zinc-600 transition-colors"
+          className="mt-1 text-2xs text-zinc-400 hover:text-zinc-600 transition-colors"
         >
           Replace poster
         </button>

@@ -905,7 +905,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                   <td className="px-3 py-2.5 text-zinc-700 whitespace-nowrap">
                     {call.contact?.full_name || call.client?.full_name || "—"}
                     {!call.contact_id && call.client_id && (
-                      <span className="ml-1 text-[10px] text-amber-600 font-medium">Client</span>
+                      <span className="ml-1 text-2xs text-amber-600 font-medium">Client</span>
                     )}
                   </td>
                   <td className="px-3 py-2.5 text-zinc-700 min-w-[280px] max-w-[420px] truncate" title={call.subject || ""}>
@@ -1010,7 +1010,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
               {form.contact_id && selectedContact && (
                 <Link
                   href={`/contacts/${selectedContact.id}`}
-                  className="inline-flex items-center gap-0.5 text-[11px] font-normal text-zinc-400 hover:text-black transition-colors"
+                  className="inline-flex items-center gap-0.5 text-2xs font-normal text-zinc-400 hover:text-black transition-colors"
                   title="View full contact record"
                   prefetch
                 >
@@ -1050,14 +1050,14 @@ export function CallLogClient({ userId }: CallLogClientProps) {
           {/* Contact/Client info card — shows when caller is selected */}
           {callerRecord && (callerPhones.length > 0 || callerEmails.length > 0) && (
             <div className="rounded-md border border-zinc-200 bg-zinc-50/50 px-3 py-2.5 space-y-1.5">
-              <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">
+              <p className="text-2xs font-medium uppercase tracking-wider text-zinc-400">
                 Contact Info
               </p>
               {callerPhones.map((p) => (
                 <div key={p.id} className="flex items-center gap-2 text-xs">
                   <span className="w-16 font-medium text-zinc-400">{p.designation}</span>
                   <span className="text-zinc-700">{formatPhone(p.number)}</span>
-                  {p.is_primary && <span className="text-amber-500 text-[10px]">★</span>}
+                  {p.is_primary && <span className="text-amber-500 text-2xs">★</span>}
                 </div>
               ))}
               {callerEmails.map((e) => (
@@ -1065,7 +1065,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                   <span className="w-16 font-medium text-zinc-400">{e.designation}</span>
                   <span className="text-zinc-700">{e.address}</span>
                   <MailIconButton email={e.address} />
-                  {e.is_primary && <span className="text-amber-500 text-[10px]">★</span>}
+                  {e.is_primary && <span className="text-amber-500 text-2xs">★</span>}
                 </div>
               ))}
             </div>
@@ -1157,7 +1157,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
                   </div>
                 ))}
                 {newPhones.length > 0 && (
-                  <p className="text-[10px] text-zinc-400 px-1">New numbers will be saved to the contact record.</p>
+                  <p className="text-2xs text-zinc-400 px-1">New numbers will be saved to the contact record.</p>
                 )}
                 <button
                   type="button"
@@ -1209,7 +1209,7 @@ export function CallLogClient({ userId }: CallLogClientProps) {
             {form.contact_type === "client" ? (
               <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-sm text-zinc-600">
                 {clientsCache.get(form.client_id || "")?.full_name || "—"}
-                <span className="ml-1 text-[10px] text-zinc-400">(caller)</span>
+                <span className="ml-1 text-2xs text-zinc-400">(caller)</span>
               </div>
             ) : (
               <RelationPicker

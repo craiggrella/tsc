@@ -541,7 +541,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
                 {form.company_id && (
                   <Link
                     href={`/companies/${form.company_id}`}
-                    className="inline-flex items-center gap-0.5 text-[11px] font-normal text-zinc-400 hover:text-black transition-colors"
+                    className="inline-flex items-center gap-0.5 text-2xs font-normal text-zinc-400 hover:text-black transition-colors"
                     title="View full company record"
                     prefetch
                   >
@@ -602,7 +602,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
               {form.assistant_id && (
                 <Link
                   href={`/contacts/${form.assistant_id}`}
-                  className="inline-flex items-center gap-0.5 text-[11px] font-normal text-zinc-400 hover:text-black transition-colors"
+                  className="inline-flex items-center gap-0.5 text-2xs font-normal text-zinc-400 hover:text-black transition-colors"
                   title="View full assistant record"
                   prefetch
                 >
@@ -714,7 +714,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
             relatedSubmissions.map((s) => (
               <div key={s.id} className="flex items-center justify-between rounded-md border border-zinc-200 px-4 py-3">
                 <p className="text-sm font-medium text-black">{s.description}</p>
-                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-2xs font-medium ${
                   s.status === "need_to_send" ? "bg-amber-50 text-amber-700 border-amber-200" :
                   s.status === "sent" ? "bg-blue-50 text-blue-700 border-blue-200" :
                   "bg-emerald-50 text-emerald-700 border-emerald-200"
@@ -743,7 +743,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   {m.response ? (
-                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-2xs font-medium ${
                       m.response === "love" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
                       m.response === "like" ? "bg-blue-50 text-blue-700 border-blue-200" :
                       m.response === "meh" ? "bg-amber-50 text-amber-700 border-amber-200" :
@@ -773,7 +773,7 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
                         prev.map((mat) => mat.id === m.id ? { ...mat, response: val || null } : mat)
                       );
                     }}
-                    className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-[10px] text-zinc-600 outline-none"
+                    className="rounded border border-zinc-200 bg-white px-1.5 py-0.5 text-2xs text-zinc-600 outline-none"
                   >
                     <option value="">&mdash;</option>
                     <option value="love">Love</option>
@@ -806,17 +806,17 @@ export function ContactDetail({ contactId, userId }: ContactDetailProps) {
                   </div>
                   <div className="flex items-center gap-2 flex-wrap justify-end">
                     {form.type && (
-                      <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                      <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-2xs font-medium text-zinc-600">
                         {form.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                       </span>
                     )}
                     {form.exec_level && (
-                      <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                      <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-2xs font-medium text-zinc-600">
                         {form.exec_level.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                       </span>
                     )}
                     {companyBuyerType && (
-                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-2xs font-medium text-amber-700">
                         {companyBuyerType}
                       </span>
                     )}

@@ -361,7 +361,7 @@ export default function FilesPage() {
               >
                 <Icon className="h-8 w-8 text-zinc-400" />
                 <span className="line-clamp-2 text-xs text-black">{file.name}</span>
-                <span className="text-[10px] text-zinc-400">{formatSize(file.size)}</span>
+                <span className="text-2xs text-zinc-400">{formatSize(file.size)}</span>
               </button>
             );
           })}

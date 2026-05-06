@@ -87,7 +87,7 @@ export function PhoneSection({
 
   return (
     <div>
-      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+      <p className="mb-1.5 text-2xs font-medium uppercase tracking-wider text-zinc-400">
         Phones
       </p>
       <div className="space-y-1">
@@ -198,7 +198,7 @@ export function EmailSection({
 
   return (
     <div>
-      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+      <p className="mb-1.5 text-2xs font-medium uppercase tracking-wider text-zinc-400">
         Emails
       </p>
       <div className="space-y-1">
@@ -313,7 +313,7 @@ export function AddressSection({
 
   return (
     <div>
-      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+      <p className="mb-1.5 text-2xs font-medium uppercase tracking-wider text-zinc-400">
         Addresses
       </p>
       <div className="space-y-2">
@@ -452,7 +452,7 @@ export function SocialSection({
 
   return (
     <div>
-      <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+      <p className="mb-1.5 text-2xs font-medium uppercase tracking-wider text-zinc-400">
         Social Links
       </p>
       <div className="space-y-1">

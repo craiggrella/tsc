@@ -774,7 +774,7 @@ export function SettingsClient({ userId }: SettingsClientProps) {
                       <p className="text-sm font-medium text-black">{member.full_name}</p>
                       <p className="text-xs text-zinc-500">{member.email}</p>
                     </div>
-                    <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-600 capitalize">
+                    <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-2xs font-medium text-zinc-600 capitalize">
                       {member.role?.replace(/_/g, " ") || "member"}
                     </span>
                   </div>
@@ -795,7 +795,7 @@ export function SettingsClient({ userId }: SettingsClientProps) {
                   <p className="text-sm font-medium text-black">Box</p>
                   <p className="text-xs text-zinc-500">File storage and document management</p>
                 </div>
-                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-2xs font-medium text-emerald-700">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                   Connected
                 </span>
@@ -808,7 +808,7 @@ export function SettingsClient({ userId }: SettingsClientProps) {
                   <p className="text-sm font-medium text-black">Microsoft 365</p>
                   <p className="text-xs text-zinc-500">Outlook calendar sync</p>
                 </div>
-                <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-500">
+                <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-2xs font-medium text-zinc-500">
                   Coming Soon
                 </span>
               </div>
@@ -838,7 +838,7 @@ export function SettingsClient({ userId }: SettingsClientProps) {
                   >
                     <span className="text-sm font-medium text-black">{pl.label}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-zinc-400">{rows.length}</span>
+                      <span className="text-2xs text-zinc-400">{rows.length}</span>
                       {isOpen ? <ChevronDown className="h-3.5 w-3.5 text-zinc-400" /> : <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />}
                     </div>
                   </button>
@@ -1035,7 +1035,7 @@ export function SettingsClient({ userId }: SettingsClientProps) {
                 <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
                   <p className="text-xs font-medium text-amber-800">Password Set</p>
                   <p className="mt-0.5 font-mono text-sm text-amber-900 select-all">{setPwResult}</p>
-                  <p className="mt-1 text-[11px] text-amber-600">Copy and share this securely. It won&apos;t be shown again.</p>
+                  <p className="mt-1 text-2xs text-amber-600">Copy and share this securely. It won&apos;t be shown again.</p>
                 </div>
               ) : (
                 <>

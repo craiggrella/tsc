@@ -152,7 +152,7 @@ export function CompaniesClient({ userId }: CompaniesClientProps) {
                   <td className="px-3 py-2.5 font-medium text-black">{toCompanyName(company.name)}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
                     {company.buyer_type ? (
-                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-2xs font-medium text-amber-700">
                         {company.buyer_type}
                       </span>
                     ) : (

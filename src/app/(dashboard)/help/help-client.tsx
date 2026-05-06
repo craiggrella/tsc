@@ -69,7 +69,7 @@ export function HelpClient({
         {/* Sticky TOC */}
         <aside className="lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-4rem)] lg:overflow-y-auto">
           <nav className="rounded-lg border border-zinc-200 bg-zinc-50/50 p-3">
-            <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-400">
+            <p className="mb-2 text-2xs font-medium uppercase tracking-wider text-zinc-400">
               On this page
             </p>
             <ul className="space-y-0.5">

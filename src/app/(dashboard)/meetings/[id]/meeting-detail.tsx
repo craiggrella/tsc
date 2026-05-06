@@ -303,7 +303,7 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
                   <span className="text-blue-700">→</span>
                   <span className="text-blue-700">{m.person_name || "—"}</span>
                   {m.response ? (
-                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-medium ${
                       m.response === "love" ? "bg-emerald-100 text-emerald-700" :
                       m.response === "like" ? "bg-blue-100 text-blue-700" :
                       m.response === "meh" ? "bg-amber-100 text-amber-700" :
@@ -312,7 +312,7 @@ export function MeetingDetail({ meetingId, userId }: MeetingDetailProps) {
                       {m.response.charAt(0).toUpperCase() + m.response.slice(1)}
                     </span>
                   ) : (
-                    <span className="text-[10px] text-blue-400">No response</span>
+                    <span className="text-2xs text-blue-400">No response</span>
                   )}
                 </div>
               ))}

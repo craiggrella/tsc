@@ -495,7 +495,7 @@ export function SubmissionDetail({ submissionId, userId }: SubmissionDetailProps
                             {item.projectIds.map((pid) => {
                               const name = projects.find((p) => p.id === pid)?.label || "";
                               return (
-                                <span key={pid} className="inline-flex items-center gap-0.5 rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] text-zinc-700">
+                                <span key={pid} className="inline-flex items-center gap-0.5 rounded bg-zinc-100 px-1.5 py-0.5 text-2xs text-zinc-700">
                                   {name}
                                   <button type="button" onClick={() => updateItem(idx, { projectIds: item.projectIds.filter((id) => id !== pid) })} className="text-zinc-400 hover:text-red-500">×</button>
                                 </span>

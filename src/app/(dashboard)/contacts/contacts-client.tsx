@@ -290,7 +290,7 @@ export function ContactsClient({ userId }: ContactsClientProps) {
                   <td className="px-3 py-2.5 text-zinc-700 whitespace-nowrap">{contact.company?.name || "\u2014"}</td>
                   <td className="px-3 py-2.5 whitespace-nowrap">
                     {contact.type ? (
-                      <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                      <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-2xs font-medium text-zinc-600">
                         {contact.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                       </span>
                     ) : "\u2014"}

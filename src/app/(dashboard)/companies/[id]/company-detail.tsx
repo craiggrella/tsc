@@ -578,7 +578,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         {person.exec_level ? (
-                          <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-[11px] font-medium text-zinc-600">
+                          <span className="inline-flex items-center rounded-full border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-2xs font-medium text-zinc-600">
                             {person.exec_level.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                           </span>
                         ) : "\u2014"}
@@ -590,7 +590,7 @@ export function CompanyDetail({ companyId, userId }: CompanyDetailProps) {
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         {form.buyer_type ? (
-                          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-2xs font-medium text-amber-700">
                             {form.buyer_type}
                           </span>
                         ) : "\u2014"}

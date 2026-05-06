@@ -159,7 +159,7 @@ export function RelationPicker({
                         setAdding(false);
                       }
                     }}
-                    className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-black px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
                   >
                     {adding ? "Adding..." : `${addLabel} "${query.trim()}"`}
                   </button>
@@ -184,7 +184,7 @@ export function RelationPicker({
                     <span className="flex-1 text-left">
                       <span className="text-black">{o.label}</span>
                       {o.tag && (
-                        <span className="ml-1.5 inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                        <span className="ml-1.5 inline-flex rounded bg-amber-100 px-1.5 py-0.5 text-2xs font-medium text-amber-700">
                           {o.tag}
                         </span>
                       )}
@@ -216,7 +216,7 @@ export function RelationPicker({
                         setAdding(false);
                       }
                     }}
-                    className="flex w-full items-center gap-2 border-t border-zinc-100 px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-50 transition-colors"
+                    className="flex w-full items-center gap-2 border-t border-zinc-100 px-3 py-2 text-sm font-medium text-black hover:bg-zinc-50 transition-colors"
                   >
                     <span className="text-xs">+ {addLabel} &ldquo;{query.trim()}&rdquo;</span>
                   </button>
@@ -333,7 +333,7 @@ export function MultiRelationPicker({
                         setAdding(false);
                       }
                     }}
-                    className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-black px-2.5 py-1 text-xs font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                    className="mt-1.5 inline-flex items-center gap-1 rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
                   >
                     {adding ? "Creating..." : `${addLabel} "${query.trim()}"`}
                   </button>
@@ -389,7 +389,7 @@ export function MultiRelationPicker({
                         setAdding(false);
                       }
                     }}
-                    className="flex w-full items-center gap-2 border-t border-zinc-100 px-3 py-1.5 text-sm text-zinc-500 hover:bg-zinc-50 transition-colors"
+                    className="flex w-full items-center gap-2 border-t border-zinc-100 px-3 py-2 text-sm font-medium text-black hover:bg-zinc-50 transition-colors"
                   >
                     <span className="text-xs">+ {addLabel} &ldquo;{query.trim()}&rdquo;</span>
                   </button>

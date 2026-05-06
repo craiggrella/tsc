@@ -75,7 +75,7 @@ export default function DashboardLayout({
           >
             <Phone className="h-4 w-4" />
             New Call
-            <kbd className="ml-1 rounded bg-white/20 px-1.5 py-0.5 text-[10px] font-normal">
+            <kbd className="ml-1 rounded bg-white/20 px-1.5 py-0.5 text-2xs font-normal">
               ⌘J
             </kbd>
           </button>

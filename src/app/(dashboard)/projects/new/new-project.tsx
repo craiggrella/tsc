@@ -136,7 +136,7 @@ export function NewProject({ userId }: NewProjectProps) {
         </Field>
         {/* Companies with designation */}
         <div>
-          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-400">Companies</p>
+          <p className="mb-1.5 text-2xs font-medium uppercase tracking-wider text-zinc-400">Companies</p>
           <div className="space-y-1.5">
             {projectCompanies.map((pc, i) => (
               <div key={`new-${i}`} className="group flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-zinc-50 transition-colors">

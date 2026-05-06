@@ -250,7 +250,7 @@ export function OmniSearch() {
       >
         <Search className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">Search</span>
-        <kbd className="hidden sm:inline rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-normal text-zinc-400">
+        <kbd className="hidden sm:inline rounded bg-zinc-100 px-1.5 py-0.5 text-2xs font-normal text-zinc-400">
           ⌘K
         </kbd>
       </button>
@@ -316,7 +316,7 @@ export function OmniSearch() {
                       {result.label}
                     </span>
                     <span
-                      className={`flex-shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                      className={`flex-shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium ${
                         TYPE_COLORS[result.type] || "bg-zinc-100 text-zinc-600"
                       }`}
                     >
@@ -329,7 +329,7 @@ export function OmniSearch() {
           </div>
 
           {/* Footer hint */}
-          <div className="border-t border-zinc-100 px-4 py-2 flex items-center gap-3 text-[10px] text-zinc-400">
+          <div className="border-t border-zinc-100 px-4 py-2 flex items-center gap-3 text-2xs text-zinc-400">
             <span>↑↓ Navigate</span>
             <span>↵ Open</span>
             <span>ESC Close</span>

@@ -225,7 +225,7 @@ export function MfaEnroll() {
         </div>
       )}
       {error && !enrolling && <p className="text-xs text-red-600">{error}</p>}
-      <p className="text-[11px] text-zinc-400 leading-relaxed">
+      <p className="text-2xs text-zinc-400 leading-relaxed">
         If you lose access to your authenticator, ask a super-admin to clear your factor in the Supabase auth tables (delete from <code className="font-mono">auth.mfa_factors</code> by user id) so you can re-enroll.
       </p>
     </div>

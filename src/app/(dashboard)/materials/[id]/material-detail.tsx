@@ -468,7 +468,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
                       {r.buyer_type ? (
                         <Link
                           href={`/contacts?buyer_type=${encodeURIComponent(r.buyer_type)}`}
-                          className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+                          className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-2xs font-medium text-amber-700 hover:bg-amber-100 transition-colors"
                         >
                           {r.buyer_type}
                         </Link>
@@ -491,7 +491,7 @@ export function MaterialDetail({ materialId, userId }: MaterialDetailProps) {
                     <td className="px-3 py-2.5 whitespace-nowrap">
                       {r.response ? (
                         <span
-                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-2xs font-medium ${
                             RESPONSE_COLORS[r.response] || "bg-zinc-50 text-zinc-600 border-zinc-200"
                           }`}
                         >
