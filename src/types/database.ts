@@ -319,6 +319,15 @@ export interface Contract {
   org_id: string;
   contract_name: string;
   file_url: string | null;
+  client_id: string | null;
+  project_id: string | null;
+  staff_level: string | null;
+  status: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  box_file_id: string | null;
+  extracted_text: string | null;
+  extracted_at: string | null;
   created_at: string;
   updated_at: string;
 }

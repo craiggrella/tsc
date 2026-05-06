@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Loader2, ExternalLink, Plus, Trash2, Copy, Check as CheckIcon } from "lucide-react";
+import { Loader2, ExternalLink, Plus, Trash2, Copy, Check as CheckIcon, FileText, MessageCircle } from "lucide-react";
 import { Breadcrumb, buildFromParams } from "@/components/shared/breadcrumb";
 import { createClient } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -31,6 +31,8 @@ import { usePicklist, toSelectOptions } from "@/lib/picklists";
 import { toPersonName } from "@/lib/format-name";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { SavedIndicator } from "@/components/shared/saved-indicator";
+import { FilePicker } from "@/components/shared/file-picker";
+import { FilePreview } from "@/components/shared/file-preview";
 
 interface CompanyData {
   id: string;
@@ -50,6 +52,20 @@ interface CreditRow {
   credit_status: string | null;
   start_year: number | null;
   end_year: number | null;
+  _deleted?: boolean;
+}
+
+interface ContractRow {
+  id?: string;
+  project_id: string | null;
+  project_name: string;
+  staff_level: string;
+  status: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  box_file_id: string | null;
+  box_file_name: string | null;
+  extracted_at: string | null;
   _deleted?: boolean;
 }
 
@@ -98,7 +114,9 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyForm);
   const [deleting, setDeleting] = useState(false);
-  const [activeTab, setActiveTab] = useState("info");
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") || "info";
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   const [companies, setCompanies] = useState<CompanyData[]>([]);
   const [projects, setProjects] = useState<ProjectData[]>([]);
@@ -107,6 +125,8 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   // Picklists
   const creditStatusItems = usePicklist("list_credit_statuses");
   const creditStatusOptions = useMemo(() => toSelectOptions(creditStatusItems), [creditStatusItems]);
+  const contractStatusItems = usePicklist("list_contract_statuses");
+  const contractStatusOptions = useMemo(() => toSelectOptions(contractStatusItems), [contractStatusItems]);
 
   // Sub-records
   const [phones, setPhones] = useState<PhoneRecord[]>([]);
@@ -129,6 +149,18 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   const [credits, setCredits] = useState<CreditRow[]>([]);
   const [origCreditIds, setOrigCreditIds] = useState<Set<string>>(new Set());
   const [creditsSaving, setCreditsSaving] = useState(false);
+
+  // Contracts
+  const [contracts, setContracts] = useState<ContractRow[]>([]);
+  const [contractsLoaded, setContractsLoaded] = useState(false);
+  const [contractsSaving, setContractsSaving] = useState(false);
+  const [contractFilePickerForRow, setContractFilePickerForRow] = useState<number | null>(null);
+  const [contractPreviewFile, setContractPreviewFile] = useState<{ id: string; name: string } | null>(null);
+  const [askOpenForRow, setAskOpenForRow] = useState<number | null>(null);
+  const [askInput, setAskInput] = useState("");
+  const [askLoading, setAskLoading] = useState(false);
+  const [askAnswer, setAskAnswer] = useState<string | null>(null);
+  const [askError, setAskError] = useState<string | null>(null);
 
   // Meetings table
   const [meetingRows, setMeetingRows] = useState<MeetingTableRow[]>([]);
@@ -282,6 +314,46 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     }
     load();
   }, [clientId]);
+
+  // Lazy load contracts tab
+  useEffect(() => {
+    if (activeTab !== "contracts" || contractsLoaded) return;
+    async function loadContracts() {
+      const { data } = await supabase
+        .from("contracts")
+        .select("id, project_id, project:projects!project_id(name), staff_level, status, start_date, end_date, box_file_id, extracted_at")
+        .eq("client_id", clientId)
+        .order("created_at", { ascending: false });
+      const rows: ContractRow[] = (data || []).map((c) => {
+        const r = c as unknown as {
+          id: string;
+          project_id: string | null;
+          project: { name: string } | null;
+          staff_level: string | null;
+          status: string | null;
+          start_date: string | null;
+          end_date: string | null;
+          box_file_id: string | null;
+          extracted_at: string | null;
+        };
+        return {
+          id: r.id,
+          project_id: r.project_id,
+          project_name: r.project?.name || "",
+          staff_level: r.staff_level || "",
+          status: r.status,
+          start_date: r.start_date,
+          end_date: r.end_date,
+          box_file_id: r.box_file_id,
+          box_file_name: null,
+          extracted_at: r.extracted_at,
+        };
+      });
+      setContracts(rows);
+      setContractsLoaded(true);
+    }
+    loadContracts();
+  }, [activeTab, contractsLoaded, clientId, supabase]);
 
   // Lazy load meetings tab
   useEffect(() => {
@@ -589,6 +661,134 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     }
   }
 
+  // ── Contracts helpers ──
+  function addContractRow() {
+    setContracts((prev) => [
+      ...prev,
+      {
+        project_id: null,
+        project_name: "",
+        staff_level: "",
+        status: null,
+        start_date: null,
+        end_date: null,
+        box_file_id: null,
+        box_file_name: null,
+        extracted_at: null,
+      },
+    ]);
+  }
+
+  function updateContract(index: number, field: keyof ContractRow, value: unknown) {
+    setContracts((prev) => prev.map((c, i) => (i === index ? { ...c, [field]: value } : c)));
+  }
+
+  function deleteContractRow(index: number) {
+    setContracts((prev) => {
+      const row = prev[index];
+      if (row.id) return prev.map((c, i) => (i === index ? { ...c, _deleted: true } : c));
+      return prev.filter((_, i) => i !== index);
+    });
+  }
+
+  function attachFileToContract(rowIndex: number, fileId: string, fileName: string) {
+    setContracts((prev) =>
+      prev.map((c, i) =>
+        i === rowIndex ? { ...c, box_file_id: fileId, box_file_name: fileName } : c
+      )
+    );
+  }
+
+  async function saveContracts() {
+    setContractsSaving(true);
+    try {
+      const toDelete = contracts.filter((c) => c._deleted && c.id);
+      const toUpdate = contracts.filter((c) => !c._deleted && c.id);
+      const toInsert = contracts.filter((c) => !c._deleted && !c.id);
+
+      if (toDelete.length > 0) {
+        await supabase.from("contracts").delete().in("id", toDelete.map((c) => c.id!));
+      }
+
+      const newlyExtractedIds: string[] = [];
+
+      for (const c of toUpdate) {
+        // Detect box_file_id change so we can re-extract text
+        const orig = contracts.find((x) => x.id === c.id);
+        const fileChanged = orig && orig.box_file_id !== c.box_file_id;
+
+        await supabase
+          .from("contracts")
+          .update({
+            project_id: c.project_id,
+            staff_level: c.staff_level || null,
+            status: c.status,
+            start_date: c.start_date,
+            end_date: c.end_date,
+            box_file_id: c.box_file_id,
+            // Clear extracted_text when file changes — fresh extraction will rewrite it
+            ...(fileChanged ? { extracted_text: null, extracted_at: null } : {}),
+          })
+          .eq("id", c.id!);
+
+        if (fileChanged && c.box_file_id && c.id) newlyExtractedIds.push(c.id);
+      }
+
+      for (const c of toInsert) {
+        const projectName =
+          c.project_name || projects.find((p) => p.id === c.project_id)?.name || "Untitled Contract";
+        const { data } = await supabase
+          .from("contracts")
+          .insert({
+            client_id: clientId,
+            project_id: c.project_id,
+            contract_name: projectName,
+            staff_level: c.staff_level || null,
+            status: c.status,
+            start_date: c.start_date,
+            end_date: c.end_date,
+            box_file_id: c.box_file_id,
+          })
+          .select("id")
+          .single();
+        if (data?.id && c.box_file_id) newlyExtractedIds.push(data.id);
+      }
+
+      // Fire-and-forget text extraction for new/changed files.
+      for (const id of newlyExtractedIds) {
+        fetch(`/api/contracts/${id}/extract-text`, { method: "POST" }).catch(() => {});
+      }
+
+      // Reload contracts
+      setContractsLoaded(false);
+    } finally {
+      setContractsSaving(false);
+    }
+  }
+
+  async function handleAskContract(rowIndex: number) {
+    const c = contracts[rowIndex];
+    if (!c.id) return;
+    setAskLoading(true);
+    setAskError(null);
+    setAskAnswer(null);
+    try {
+      const res = await fetch(`/api/contracts/${c.id}/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: askInput }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setAskError(data.error || "Failed to ask.");
+      } else {
+        setAskAnswer(data.answer);
+      }
+    } finally {
+      setAskLoading(false);
+    }
+  }
+
   type ClientAutoSaveSnapshot = {
     form: typeof emptyForm;
     phones: PhoneRecord[];
@@ -728,6 +928,7 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     { id: "submissions", label: "Submissions" },
     { id: "materials", label: "Client Material" },
     { id: "credits", label: "Credits" },
+    { id: "contracts", label: "Contracts" },
     { id: "calls", label: "Calls" },
   ];
 
@@ -1251,6 +1452,229 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
               {creditsSaving ? "Saving..." : "Save Credits"}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Contracts Tab */}
+      {activeTab === "contracts" && (
+        <div>
+          {!contractsLoaded ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-5 w-5 animate-spin text-zinc-400" />
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-zinc-200">
+              <table className="w-full min-w-[900px] text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-200 bg-zinc-50/50">
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Project</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Staff Level</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Status</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Start Date</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">End Date</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Contract</th>
+                    <th className="px-3 py-2.5 text-left text-xs font-medium text-zinc-500">Ask</th>
+                    <th className="px-3 py-2.5"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {contracts.filter((c) => !c._deleted).length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-3 py-12 text-center text-sm text-zinc-400">
+                        No contracts yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    contracts.map((contract, index) =>
+                      contract._deleted ? null : (
+                        <tr key={contract.id || `new-${index}`} className="border-b border-zinc-100 last:border-b-0">
+                          <td className="px-2 py-1.5">
+                            <RelationPicker
+                              value={contract.project_id}
+                              onChange={(id) => {
+                                const proj = projects.find((p) => p.id === id);
+                                updateContract(index, "project_id", id);
+                                if (proj) updateContract(index, "project_name", proj.name);
+                              }}
+                              options={projectOptions}
+                              placeholder="Select project..."
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              value={contract.staff_level}
+                              onChange={(e) => updateContract(index, "staff_level", e.target.value)}
+                              placeholder="Staff level"
+                              className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-sm outline-none placeholder:text-zinc-400 hover:border-zinc-300 focus:border-zinc-400 transition-colors"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <select
+                              value={contract.status || ""}
+                              onChange={(e) => updateContract(index, "status", e.target.value || null)}
+                              className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-sm outline-none hover:border-zinc-300 focus:border-zinc-400 transition-colors"
+                            >
+                              <option value="">--</option>
+                              {contractStatusOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="date"
+                              value={contract.start_date || ""}
+                              onChange={(e) => updateContract(index, "start_date", e.target.value || null)}
+                              className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-sm outline-none hover:border-zinc-300 focus:border-zinc-400 transition-colors"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <input
+                              type="date"
+                              value={contract.end_date || ""}
+                              onChange={(e) => updateContract(index, "end_date", e.target.value || null)}
+                              className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-sm outline-none hover:border-zinc-300 focus:border-zinc-400 transition-colors"
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            {contract.box_file_id ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setContractPreviewFile({ id: contract.box_file_id!, name: contract.box_file_name || "Contract" })}
+                                  className="text-zinc-500 hover:text-black transition-colors"
+                                  title="Preview"
+                                >
+                                  <FileText className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setContractFilePickerForRow(index)}
+                                  className="text-[10px] text-zinc-400 hover:text-zinc-600 transition-colors"
+                                  title="Replace"
+                                >
+                                  Replace
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setContractFilePickerForRow(index)}
+                                className="text-xs text-zinc-500 hover:text-black transition-colors"
+                              >
+                                Attach
+                              </button>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAskOpenForRow(askOpenForRow === index ? null : index);
+                                setAskInput("");
+                                setAskAnswer(null);
+                                setAskError(null);
+                              }}
+                              disabled={!contract.id || !contract.extracted_at}
+                              title={!contract.extracted_at ? "Contract text not yet extracted" : "Ask AI about this contract"}
+                              className="text-zinc-500 hover:text-black transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              <MessageCircle className="h-4 w-4" />
+                            </button>
+                          </td>
+                          <td className="px-2 py-1.5 text-center">
+                            <button
+                              onClick={() => deleteContractRow(index)}
+                              className="text-zinc-400 hover:text-red-500 transition-colors"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    )
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* AI Q&A panel — appears under the table when active */}
+          {askOpenForRow !== null && contracts[askOpenForRow]?.id && (
+            <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 p-4">
+              <p className="mb-2 text-xs font-medium text-zinc-700">
+                Ask about this contract
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={askInput}
+                  onChange={(e) => setAskInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && askInput.trim().length >= 3 && !askLoading) {
+                      handleAskContract(askOpenForRow);
+                    }
+                  }}
+                  placeholder='e.g. "What does the contract say about year 3?"'
+                  className="flex-1 rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-sm outline-none focus:border-zinc-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAskContract(askOpenForRow)}
+                  disabled={askLoading || askInput.trim().length < 3}
+                  className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                >
+                  {askLoading ? "Asking..." : "Ask"}
+                </button>
+              </div>
+              {askError && <p className="mt-2 text-xs text-red-500">{askError}</p>}
+              {askAnswer && (
+                <div className="mt-3 rounded-md border border-zinc-200 bg-white p-3 text-sm text-zinc-700 whitespace-pre-wrap">
+                  {askAnswer}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={addContractRow}
+              className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-3 py-1.5 text-xs text-zinc-700 hover:bg-zinc-50 transition-colors"
+            >
+              <Plus className="h-3 w-3" />
+              Add Contract
+            </button>
+            <button
+              type="button"
+              onClick={saveContracts}
+              disabled={contractsSaving}
+              className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
+            >
+              {contractsSaving ? "Saving..." : "Save Contracts"}
+            </button>
+          </div>
+
+          {/* Box file picker — single picker shared across rows */}
+          <FilePicker
+            open={contractFilePickerForRow !== null}
+            onClose={() => setContractFilePickerForRow(null)}
+            onSelect={(files) => {
+              if (contractFilePickerForRow !== null && files.length > 0) {
+                attachFileToContract(contractFilePickerForRow, files[0].box_file_id, files[0].name);
+              }
+              setContractFilePickerForRow(null);
+            }}
+          />
+
+          {/* File preview modal */}
+          {contractPreviewFile && (
+            <FilePreview
+              fileId={contractPreviewFile.id}
+              fileName={contractPreviewFile.name}
+              onClose={() => setContractPreviewFile(null)}
+            />
+          )}
         </div>
       )}
 
