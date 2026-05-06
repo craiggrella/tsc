@@ -102,7 +102,7 @@ export function RelationPicker({
   const displayLabel = selected?.label || selectedLabel;
 
   return (
-    <div ref={ref} className={cn("relative", className)}>
+    <div ref={ref} className={cn("relative", open && "z-50", className)}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -123,7 +123,7 @@ export function RelationPicker({
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border border-zinc-200 bg-white shadow-lg">
+        <div className="absolute z-50 mt-1 w-full min-w-[280px] rounded-md border border-zinc-200 bg-white shadow-lg">
           <div className="flex items-center gap-2 border-b border-zinc-100 px-3 py-2">
             <Search className="h-3.5 w-3.5 text-zinc-400" />
             <input
@@ -272,7 +272,7 @@ export function MultiRelationPicker({
   }
 
   return (
-    <div ref={ref} className={cn("relative", className)}>
+    <div ref={ref} className={cn("relative", open && "z-50", className)}>
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -300,7 +300,7 @@ export function MultiRelationPicker({
       </button>
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full rounded-md border border-zinc-200 bg-white shadow-lg">
+        <div className="absolute z-50 mt-1 w-full min-w-[280px] rounded-md border border-zinc-200 bg-white shadow-lg">
           <div className="flex items-center gap-2 border-b border-zinc-100 px-3 py-2">
             <Search className="h-3.5 w-3.5 text-zinc-400" />
             <input

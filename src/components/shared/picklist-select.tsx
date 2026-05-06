@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ChevronDown, Settings2 } from "lucide-react";
+import { ChevronDown, Plus, Settings2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
+import { invalidatePicklistCache } from "@/lib/picklists";
 
 interface PicklistSelectProps {
   value: string | null | undefined;
@@ -12,8 +14,18 @@ interface PicklistSelectProps {
   placeholder?: string;
   /** Picklist table name (e.g., "list_contact_types"). Enables the "Manage list" footer. */
   manageTable?: string;
+  /** When true (and manageTable is set), shows an inline "Add new" input below the divider. */
+  addable?: boolean;
   className?: string;
   disabled?: boolean;
+}
+
+function slugify(label: string): string {
+  return label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 60);
 }
 
 /**
@@ -27,11 +39,16 @@ export function PicklistSelect({
   options,
   placeholder = "Select...",
   manageTable,
+  addable = false,
   className,
   disabled,
 }: PicklistSelectProps) {
   const [open, setOpen] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const supabase = createClient();
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -41,10 +58,42 @@ export function PicklistSelect({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  async function handleAdd() {
+    const trimmed = newLabel.trim();
+    if (!trimmed || !manageTable) return;
+    const value = slugify(trimmed);
+    if (!value) {
+      setAddError("Invalid label.");
+      return;
+    }
+    if (options.some((o) => o.value === value)) {
+      setAddError("Already exists.");
+      return;
+    }
+    setAdding(true);
+    setAddError(null);
+    try {
+      const maxOrder = options.reduce((max, _o, i) => Math.max(max, i), -1) + 1;
+      const { error } = await supabase
+        .from(manageTable)
+        .insert({ value, label: trimmed, sort_order: maxOrder });
+      if (error) {
+        setAddError(error.message);
+        return;
+      }
+      invalidatePicklistCache(manageTable);
+      onChange(value);
+      setNewLabel("");
+      setOpen(false);
+    } finally {
+      setAdding(false);
+    }
+  }
+
   const selected = options.find((o) => o.value === value);
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className={cn("relative", open && "z-50")}>
       <button
         type="button"
         disabled={disabled}
@@ -59,41 +108,83 @@ export function PicklistSelect({
         <ChevronDown className="h-3.5 w-3.5 text-zinc-400 flex-shrink-0 ml-2" />
       </button>
       {open && (
-        <div className="absolute left-0 right-0 z-50 mt-1 rounded-md border border-zinc-200 bg-white shadow-lg py-1 max-h-72 overflow-y-auto">
-          {placeholder && (
-            <button
-              type="button"
-              onClick={() => {
-                onChange(null);
-                setOpen(false);
-              }}
-              className={cn(
-                "flex w-full items-center px-3 py-1.5 text-sm hover:bg-zinc-50 text-left",
-                !selected ? "text-black font-medium" : "text-zinc-400"
-              )}
-            >
-              {placeholder}
-            </button>
+        <div className="absolute left-0 z-50 mt-1 min-w-full w-max max-w-[320px] rounded-md border border-zinc-200 bg-white shadow-lg flex flex-col">
+          {manageTable && (
+            <div className="flex items-center gap-2 border-b border-zinc-100 px-3 py-2">
+              <input
+                autoFocus
+                type="text"
+                value={newLabel}
+                onChange={(e) => {
+                  setNewLabel(e.target.value);
+                  setAddError(null);
+                }}
+                placeholder="Type to search or add..."
+                className="w-full bg-transparent text-sm outline-none placeholder:text-zinc-400"
+              />
+            </div>
           )}
-          {options.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => {
-                onChange(opt.value);
-                setOpen(false);
-              }}
-              className={cn(
-                "flex w-full items-center px-3 py-1.5 text-sm hover:bg-zinc-50 text-left",
-                opt.value === value ? "text-black font-medium bg-zinc-50" : "text-zinc-700"
-              )}
-            >
-              <span className="truncate">{opt.label}</span>
-            </button>
-          ))}
+          <div className="flex-1 overflow-y-auto py-1 max-h-72">
+            {placeholder && !newLabel.trim() && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange(null);
+                  setOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center px-3 py-1.5 text-sm hover:bg-zinc-50 text-left",
+                  !selected ? "text-black font-medium" : "text-zinc-400"
+                )}
+              >
+                {placeholder}
+              </button>
+            )}
+            {options
+              .filter((opt) =>
+                !newLabel.trim() ||
+                opt.label.toLowerCase().includes(newLabel.toLowerCase().trim())
+              )
+              .map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => {
+                    onChange(opt.value);
+                    setNewLabel("");
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-center px-3 py-1.5 text-sm hover:bg-zinc-50 text-left",
+                    opt.value === value ? "text-black font-medium bg-zinc-50" : "text-zinc-700"
+                  )}
+                >
+                  <span className="truncate">{opt.label}</span>
+                </button>
+              ))}
+          </div>
           {manageTable && (
             <>
-              <div className="my-1 mx-auto w-[90%] border-t border-zinc-200" />
+              <div className="border-t border-zinc-200" />
+              {newLabel.trim() &&
+                !options.some(
+                  (o) => o.label.toLowerCase() === newLabel.trim().toLowerCase()
+                ) && (
+                  <button
+                    type="button"
+                    onClick={handleAdd}
+                    disabled={adding}
+                    className="flex w-full items-center gap-1.5 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 hover:text-black border-b border-zinc-100 disabled:opacity-50"
+                  >
+                    <Plus className="h-3.5 w-3.5 text-zinc-500" />
+                    <span>
+                      {adding ? "Adding..." : `Create "${newLabel.trim()}"`}
+                    </span>
+                  </button>
+                )}
+              {addError && (
+                <p className="px-3 py-1.5 text-xs text-red-500">{addError}</p>
+              )}
               <Link
                 href={`/settings?tab=picklists&picklist=${manageTable}`}
                 onClick={() => setOpen(false)}

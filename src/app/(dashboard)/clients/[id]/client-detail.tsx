@@ -28,6 +28,7 @@ import {
   type SocialRecord,
 } from "@/components/shared/contact-info-editor";
 import { usePicklist, toSelectOptions } from "@/lib/picklists";
+import { PicklistSelect } from "@/components/shared/picklist-select";
 import { toPersonName } from "@/lib/format-name";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { SavedIndicator } from "@/components/shared/saved-indicator";
@@ -128,6 +129,8 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   const creditStatusOptions = useMemo(() => toSelectOptions(creditStatusItems), [creditStatusItems]);
   const contractStatusItems = usePicklist("list_contract_statuses");
   const contractStatusOptions = useMemo(() => toSelectOptions(contractStatusItems), [contractStatusItems]);
+  const staffLevelItems = usePicklist("list_staff_levels");
+  const staffLevelOptions = useMemo(() => toSelectOptions(staffLevelItems), [staffLevelItems]);
 
   // Sub-records
   const [phones, setPhones] = useState<PhoneRecord[]>([]);
@@ -149,7 +152,6 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
   // Credits
   const [credits, setCredits] = useState<CreditRow[]>([]);
   const [origCreditIds, setOrigCreditIds] = useState<Set<string>>(new Set());
-  const [creditsSaving, setCreditsSaving] = useState(false);
 
   // Contracts
   const [contracts, setContracts] = useState<ContractRow[]>([]);
@@ -605,62 +607,87 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
     });
   }
 
-  async function saveCredits() {
-    setCreditsSaving(true);
-    try {
-      const toDelete = credits.filter((c) => c._deleted && c.id);
-      const toUpdate = credits.filter((c) => !c._deleted && c.id);
-      const toInsert = credits.filter((c) => !c._deleted && !c.id);
+  // Skip the extra autoSave pass that fires after we update state with new ids
+  const skipNextCreditsSaveRef = useRef(false);
 
-      if (toDelete.length > 0) {
-        await supabase.from("client_credits").delete().in("id", toDelete.map((c) => c.id!));
-      }
-
-      for (const c of toUpdate) {
-        await supabase.from("client_credits").update({
-          project_id: c.project_id,
-          project_name: c.project_name || (projects.find((p) => p.id === c.project_id)?.name || ""),
-          level: c.level || null,
-          credit_status: c.credit_status,
-          start_year: c.start_year,
-          end_year: c.end_year,
-        }).eq("id", c.id!);
-      }
-
-      for (const c of toInsert) {
-        await supabase.from("client_credits").insert({
-          client_id: clientId,
-          project_id: c.project_id,
-          project_name: c.project_name || (projects.find((p) => p.id === c.project_id)?.name || "Untitled"),
-          level: c.level || null,
-          credit_status: c.credit_status,
-          start_year: c.start_year,
-          end_year: c.end_year,
-        });
-      }
-
-      // Reload credits
-      const { data: creditsData } = await supabase
-        .from("client_credits")
-        .select("id, project_id, project_name, level, credit_status, start_year, end_year, project:projects!project_id(id, name)")
-        .eq("client_id", clientId)
-        .order("created_at", { ascending: false });
-
-      const cList = (creditsData || []).map((c: Record<string, unknown>) => ({
-        id: c.id as string,
-        project_id: c.project_id as string | null,
-        project_name: c.project_name as string || (c.project as { name: string } | null)?.name || "",
-        level: (c.level as string) || "",
-        credit_status: c.credit_status as string | null,
-        start_year: c.start_year as number | null,
-        end_year: c.end_year as number | null,
-      }));
-      setCredits(cList);
-      setOrigCreditIds(new Set(cList.filter((c: CreditRow) => c.id).map((c: CreditRow) => c.id!)));
-    } finally {
-      setCreditsSaving(false);
-    }
+  function creditRowIsEmpty(c: CreditRow): boolean {
+    return (
+      !c.project_id &&
+      !c.level &&
+      !c.credit_status &&
+      c.start_year === null &&
+      c.end_year === null
+    );
   }
+
+  const saveCreditsSnapshot = useCallback(async (snap: CreditRow[]) => {
+    if (skipNextCreditsSaveRef.current) {
+      skipNextCreditsSaveRef.current = false;
+      return;
+    }
+
+    const toDelete = snap.filter((c) => c._deleted && c.id);
+    const toUpdate = snap.filter((c) => !c._deleted && c.id);
+    const toInsert = snap.filter((c) => !c._deleted && !c.id && !creditRowIsEmpty(c));
+
+    if (toDelete.length > 0) {
+      await supabase.from("client_credits").delete().in("id", toDelete.map((c) => c.id!));
+    }
+
+    for (const c of toUpdate) {
+      await supabase.from("client_credits").update({
+        project_id: c.project_id,
+        project_name: c.project_name || (projects.find((p) => p.id === c.project_id)?.name || ""),
+        level: c.level || null,
+        credit_status: c.credit_status,
+        start_year: c.start_year,
+        end_year: c.end_year,
+      }).eq("id", c.id!);
+    }
+
+    const inserted: { tempIdx: number; newId: string }[] = [];
+    for (let i = 0; i < snap.length; i++) {
+      const c = snap[i];
+      if (c._deleted || c.id || creditRowIsEmpty(c)) continue;
+      const { data } = await supabase.from("client_credits").insert({
+        client_id: clientId,
+        project_id: c.project_id,
+        project_name: c.project_name || (projects.find((p) => p.id === c.project_id)?.name || "Untitled"),
+        level: c.level || null,
+        credit_status: c.credit_status,
+        start_year: c.start_year,
+        end_year: c.end_year,
+      }).select("id").single();
+      if (data?.id) inserted.push({ tempIdx: i, newId: data.id });
+    }
+
+    if (toDelete.length > 0 || inserted.length > 0) {
+      skipNextCreditsSaveRef.current = true;
+      setCredits((current) => {
+        const next: CreditRow[] = [];
+        for (let i = 0; i < current.length; i++) {
+          const row = current[i];
+          if (row._deleted) continue;
+          const ins = inserted.find((x) => x.tempIdx === i);
+          next.push(ins ? { ...row, id: ins.newId } : row);
+        }
+        return next;
+      });
+    }
+  }, [supabase, clientId, projects]);
+
+  const restoreCredits = useCallback((snap: CreditRow[]) => {
+    setCredits(snap);
+  }, []);
+
+  const creditsAutoSave = useAutoSave<CreditRow[]>({
+    recordId: clientId,
+    tableName: "client_credits",
+    state: credits,
+    restore: restoreCredits,
+    enabled: !loading && credits !== undefined,
+    save: saveCreditsSnapshot,
+  });
 
   // ── Contracts helpers ──
   function addContractRow() {
@@ -1431,24 +1458,22 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                           />
                         </td>
                         <td className="px-2 py-1.5">
-                          <input
-                            value={credit.level}
-                            onChange={(e) => updateCredit(index, "level", e.target.value)}
+                          <PicklistSelect
+                            value={credit.level || null}
+                            onChange={(v) => updateCredit(index, "level", v || "")}
+                            options={staffLevelOptions}
                             placeholder="Staff level"
-                            className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-sm outline-none placeholder:text-zinc-400 hover:border-zinc-300 focus:border-zinc-400 transition-colors"
+                            manageTable="list_staff_levels"
                           />
                         </td>
                         <td className="px-2 py-1.5">
-                          <select
-                            value={credit.credit_status || ""}
-                            onChange={(e) => updateCredit(index, "credit_status", e.target.value || null)}
-                            className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-sm outline-none hover:border-zinc-300 focus:border-zinc-400 transition-colors"
-                          >
-                            <option value="">--</option>
-                            {creditStatusOptions.map((opt) => (
-                              <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                          </select>
+                          <PicklistSelect
+                            value={credit.credit_status}
+                            onChange={(v) => updateCredit(index, "credit_status", v)}
+                            options={creditStatusOptions}
+                            placeholder="--"
+                            manageTable="list_credit_statuses"
+                          />
                         </td>
                         <td className="px-2 py-1.5">
                           <input
@@ -1491,13 +1516,13 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
               <Plus className="h-3.5 w-3.5" />
               Add
             </button>
-            <button
-              onClick={saveCredits}
-              disabled={creditsSaving}
-              className="rounded-md bg-black px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-800 transition-colors disabled:opacity-50"
-            >
-              {creditsSaving ? "Saving..." : "Save Credits"}
-            </button>
+            <SavedIndicator
+              saving={creditsAutoSave.saving}
+              savedAt={creditsAutoSave.savedAt}
+              error={creditsAutoSave.error}
+              hasUndo={creditsAutoSave.hasUndo}
+              onUndo={creditsAutoSave.undo}
+            />
           </div>
         </div>
       )}
@@ -1548,24 +1573,22 @@ export function ClientDetail({ clientId, userId }: ClientDetailProps) {
                             />
                           </td>
                           <td className="px-2 py-1.5">
-                            <input
-                              value={contract.staff_level}
-                              onChange={(e) => updateContract(index, "staff_level", e.target.value)}
+                            <PicklistSelect
+                              value={contract.staff_level || null}
+                              onChange={(v) => updateContract(index, "staff_level", v || "")}
+                              options={staffLevelOptions}
                               placeholder="Staff level"
-                              className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-sm outline-none placeholder:text-zinc-400 hover:border-zinc-300 focus:border-zinc-400 transition-colors"
+                              manageTable="list_staff_levels"
                             />
                           </td>
                           <td className="px-2 py-1.5">
-                            <select
-                              value={contract.status || ""}
-                              onChange={(e) => updateContract(index, "status", e.target.value || null)}
-                              className="w-full rounded border border-zinc-200 bg-white px-2 py-1 text-sm outline-none hover:border-zinc-300 focus:border-zinc-400 transition-colors"
-                            >
-                              <option value="">--</option>
-                              {contractStatusOptions.map((opt) => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                              ))}
-                            </select>
+                            <PicklistSelect
+                              value={contract.status}
+                              onChange={(v) => updateContract(index, "status", v)}
+                              options={contractStatusOptions}
+                              placeholder="--"
+                              manageTable="list_contract_statuses"
+                            />
                           </td>
                           <td className="px-2 py-1.5">
                             <input

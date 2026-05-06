@@ -11,25 +11,36 @@ export interface PicklistItem {
 }
 
 const cache: Record<string, PicklistItem[]> = {};
+const subscribers = new Set<(table: string) => void>();
 
 export function usePicklist(tableName: string): PicklistItem[] {
   const [items, setItems] = useState<PicklistItem[]>(cache[tableName] || []);
   const supabase = createClient();
 
   useEffect(() => {
-    if (cache[tableName]) {
-      setItems(cache[tableName]);
-      return;
+    function reload() {
+      if (cache[tableName]) {
+        setItems(cache[tableName]);
+        return;
+      }
+      supabase
+        .from(tableName)
+        .select("id, value, label, sort_order")
+        .order("sort_order")
+        .then(({ data }) => {
+          const result = (data || []) as PicklistItem[];
+          cache[tableName] = result;
+          setItems(result);
+        });
     }
-    supabase
-      .from(tableName)
-      .select("id, value, label, sort_order")
-      .order("sort_order")
-      .then(({ data }) => {
-        const result = (data || []) as PicklistItem[];
-        cache[tableName] = result;
-        setItems(result);
-      });
+    reload();
+    function onChange(table: string) {
+      if (table === tableName) reload();
+    }
+    subscribers.add(onChange);
+    return () => {
+      subscribers.delete(onChange);
+    };
   }, [tableName]);
 
   return items;
@@ -45,9 +56,10 @@ export function toRelationOptions(items: PicklistItem[]): { id: string; label: s
   return items.map((i) => ({ id: i.value, label: i.label }));
 }
 
-// Invalidate cache for a specific table (after settings edit)
+// Invalidate cache for a specific table (after settings edit) and notify subscribers.
 export function invalidatePicklistCache(tableName: string) {
   delete cache[tableName];
+  for (const sub of subscribers) sub(tableName);
 }
 
 // All picklist table names for the settings page
