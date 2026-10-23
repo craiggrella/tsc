@@ -10,7 +10,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Valid email required." }, { status: 400 });
   }
 
-  const origin = request.headers.get("origin") || new URL(request.url).origin;
+  // This route is public, so don't trust the client-supplied Origin header for
+  // the reset link's destination; use the host the request actually reached.
+  const origin = new URL(request.url).origin;
   const redirectTo = `${origin}/auth/reset-password`;
 
   const supabase = createClient(

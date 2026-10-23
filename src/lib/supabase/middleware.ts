@@ -40,7 +40,10 @@ export async function updateSession(request: NextRequest) {
     pathname === "/" ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/auth") ||
-    pathname.startsWith("/api/box");
+    pathname.startsWith("/api/box") ||
+    // Forgot-password is used by logged-out users. The route validates its
+    // own input and never reveals whether an account exists.
+    pathname === "/api/auth/send-reset";
 
   // If no user and not on a public route, redirect to login
   if (!user && !isPublicRoute) {
