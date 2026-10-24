@@ -21,6 +21,18 @@ export async function POST(request: NextRequest) {
     { auth: { persistSession: false } }
   );
 
+  // Rate limit: 3 per address and 10 per IP per 15 minutes (see migration 027).
+  // Over the limit we still return { ok: true } so the response reveals nothing.
+  // Vercel sets x-forwarded-for itself; the first hop is the client.
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() || "unknown";
+  const { data: allowed, error: limitError } = await supabase.rpc("password_reset_allowed", {
+    p_email: email.trim().toLowerCase(),
+    p_ip: ip,
+  });
+  // If the check itself errors, log it and fall through so resets keep working.
+  if (limitError) console.error("send-reset rate limit check failed:", limitError);
+  if (allowed === false) return NextResponse.json({ ok: true });
+
   // generateLink returns the link WITHOUT sending an email.
   const { data, error } = await supabase.auth.admin.generateLink({
     type: "recovery",
